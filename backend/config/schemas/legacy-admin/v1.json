@@ -1,0 +1,37 @@
+{
+  // Agreed layout: Legacy administration system export, version 1.
+  // Different from Ashwood payroll on purpose: pipe-delimited, ISO dates, separate name columns,
+  // its own codes, NI numbers with spaces, salary columns by tax year, and one column we don't use.
+  "sourceName": "Legacy admin export",
+  "scheme": "ASHWOOD-DB",
+  "description": "Quarterly DB member export from the previous administration system",
+  "agreement": "[Data agreement reference, version and date]",
+
+  "file": {
+    "delimiter": "|",
+    "dateFormat": "yyyy-MM-dd",
+    "maskedColumns": [ "NINO" ]
+  },
+
+  "fields": {
+    "MemberId":         { "column": "MemberRef" },
+    "Forename":         { "column": "Forename" },
+    "Surname":          { "column": "Surname" },
+    "Sex":              { "column": "Gender", "codes": { "Male": "M", "Female": "F" } },
+    "DateOfBirth":      { "column": "DOB" },
+    "NiNumber":         { "column": "NINO" },
+    "DateJoined":       { "column": "DateJoinedScheme" },
+    "DateLeft":         { "column": "DateLeftService" },
+    "Status":           { "column": "MemberStatus", "codes": { "A": "Active", "D": "Deferred" } },
+    "MaritalStatus":    { "column": "MaritalStatus", "codes": { "Married": "Married", "Civil partner": "Married", "Single": "Single" } },
+    "PartTimeFraction": { "column": "PTFraction", "default": "1" }
+  },
+
+  "salaries": [
+    { "period": "2023/24", "column": "Salary2023_24" },
+    { "period": "2024/25", "column": "Salary2024_25" },
+    { "period": "2025/26", "column": "Salary2025_26" }
+  ],
+
+  "ignoredColumns": [ "Branch" ]
+}

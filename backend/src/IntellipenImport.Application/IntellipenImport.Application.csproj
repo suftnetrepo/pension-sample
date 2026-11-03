@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Use cases and the processing pipeline. Depends only on Domain; the outside world is reached through Abstractions/. -->
+  <PropertyGroup>
+    <RootNamespace>IntellipenImport.Application</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\IntellipenImport.Domain\IntellipenImport.Domain.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="IntellipenImport.Tests" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <!-- The web layer only: HTTP endpoints, sign-in, problem details. Composition happens in Program.cs. -->
+  <PropertyGroup>
+    <RootNamespace>IntellipenImport.Api</RootNamespace>
+    <UserSecretsId>intellipen-import-api</UserSecretsId>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\IntellipenImport.Application\IntellipenImport.Application.csproj" />
+    <ProjectReference Include="..\IntellipenImport.Infrastructure\IntellipenImport.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>

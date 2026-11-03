@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Adapters for the Application's ports: config files, the encrypted temporary store, SQLite, file and report delivery. -->
+  <PropertyGroup>
+    <RootNamespace>IntellipenImport.Infrastructure</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- IDistributedCache, Data Protection, logging, options: part of the ASP.NET Core shared framework (no download). -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <!-- The one package: Microsoft's SQLite provider. Used only in Persistence/SqliteConnectionFactory.cs. -->
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\IntellipenImport.Application\IntellipenImport.Application.csproj" />
+  </ItemGroup>
+</Project>

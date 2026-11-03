@@ -1,0 +1,34 @@
+{
+  // Agreed layout: Ashwood payroll, version 1. Source = folder name, version = file name.
+  // A new agreed version is a new file (v2.json) added through a normal release, with its own sample and test.
+  "sourceName": "Ashwood payroll",
+  "scheme": "ASHWOOD-DB",
+  "description": "Monthly DB member file from Ashwood Group payroll",
+  "agreement": "[Data agreement reference, version and date]",
+
+  "file": {
+    "delimiter": ",",
+    "dateFormat": "dd/MM/yyyy",
+    "maskedColumns": [ "NI number" ]
+  },
+
+  "fields": {
+    "MemberId":         { "column": "Member ID" },
+    "Forename":         { "column": "Name", "split": "first" },
+    "Surname":          { "column": "Name", "split": "rest" },
+    "Sex":              { "column": "Sex", "codes": { "M": "M", "F": "F" } },
+    "DateOfBirth":      { "column": "Date of birth" },
+    "NiNumber":         { "column": "NI number" },
+    "DateJoined":       { "column": "Joined scheme" },
+    "DateLeft":         { "column": "Left service" },
+    "Status":           { "column": "Status", "codes": { "Active": "Active", "Deferred": "Deferred" } },
+    "MaritalStatus":    { "column": "Married", "codes": { "Y": "Married", "N": "Single" } },
+    "PartTimeFraction": { "column": "Part-time fraction", "default": "1" }
+  },
+
+  "salaries": [
+    { "period": "Y-3", "column": "Salary Y-3" },
+    { "period": "Y-2", "column": "Salary Y-2" },
+    { "period": "Y-1", "column": "Salary Y-1" }
+  ]
+}

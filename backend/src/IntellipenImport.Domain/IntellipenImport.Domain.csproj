@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The business model: canonical member, source schemas, IntelliPen mapping, batch rules. No dependencies. -->
+  <PropertyGroup>
+    <RootNamespace>IntellipenImport.Domain</RootNamespace>
+  </PropertyGroup>
+</Project>

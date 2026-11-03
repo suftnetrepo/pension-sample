@@ -1,0 +1,52 @@
+{
+  // PLACEHOLDER IntelliPen layout, invented to prove the flow. Replace "records" and "output" when the IntelliPen
+  // import specification arrives. Fields read CANONICAL names only, never source column headings.
+  "name": "IntelliPen member import",
+  "version": "0.1",
+  "description": "Canonical member to IntelliPen (placeholder layout until the IntelliPen specification arrives)",
+
+  "records": [
+    {
+      "type": "MEM",
+      "fields": [
+        { "name": "RecordType",       "constant": "MEM" },
+        { "name": "MemberRef",        "from": "MemberId" },
+        { "name": "Forename",         "from": "Forename" },
+        { "name": "Surname",          "from": "Surname" },
+        { "name": "Gender",           "from": "Sex", "codes": { "M": "M", "F": "F" } },
+        { "name": "NINumber",         "from": "NiNumber" },
+        { "name": "DOB",              "from": "DateOfBirth", "format": "yyyy-MM-dd" },
+        { "name": "DateJoined",       "from": "DateJoined", "format": "yyyy-MM-dd" },
+        { "name": "DateLeft",         "from": "DateLeft", "format": "yyyy-MM-dd" },
+        { "name": "StatusCode",       "from": "Status", "codes": { "Active": "ACT", "Deferred": "DEF" } },
+        { "name": "MaritalCode",      "from": "MaritalStatus", "codes": { "Married": "M", "Single": "S" } },
+        { "name": "PartTimeFraction", "from": "PartTimeFraction", "decimals": 2 }
+      ]
+    },
+    {
+      "type": "SAL",
+      "perSalary": true,
+      "fields": [
+        { "name": "RecordType", "constant": "SAL" },
+        { "name": "MemberRef",  "from": "MemberId" },
+        { "name": "Period",     "from": "Salary.Period" },
+        { "name": "Salary",     "from": "Salary.Amount", "decimals": 2 }
+      ]
+    }
+  ],
+
+  "output": {
+    "delimiter": ",",
+    "header": [ "HDR", "MEMBER-IMPORT", "{Scheme}", "{RunDate}", "MAPPING-v{Version}" ],
+    "trailer": [ "TRL", "{RecordCount}" ],
+    "fileName": "{Scheme}_{RunDate}_{BatchId}.csv",
+    "lineEnding": "CRLF"
+  },
+
+  "controls": [
+    { "measure": "Members",                  "type": "count" },
+    { "measure": "Active",                   "type": "countWhere", "field": "Status", "equalsValue": "Active" },
+    { "measure": "Deferred",                 "type": "countWhere", "field": "Status", "equalsValue": "Deferred" },
+    { "measure": "Latest-year salary total", "type": "sum", "field": "LatestSalary" }
+  ]
+}

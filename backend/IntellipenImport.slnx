@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/IntellipenImport.Api/IntellipenImport.Api.csproj" />
+    <Project Path="src/IntellipenImport.Application/IntellipenImport.Application.csproj" />
+    <Project Path="src/IntellipenImport.Domain/IntellipenImport.Domain.csproj" />
+    <Project Path="src/IntellipenImport.Infrastructure/IntellipenImport.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/IntellipenImport.Tests/IntellipenImport.Tests.csproj" />
+  </Folder>
+</Solution>
