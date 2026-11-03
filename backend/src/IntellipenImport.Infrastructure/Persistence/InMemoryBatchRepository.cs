@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using IntellipenImport.Application.Abstractions;
 using IntellipenImport.Domain.Batches;
+using IntellipenImport.Domain.Canonical;
 using IntellipenImport.Domain.Processing;
 
 namespace IntellipenImport.Infrastructure.Persistence;
@@ -8,13 +9,13 @@ namespace IntellipenImport.Infrastructure.Persistence;
 /// <summary>For demos and tests (Infrastructure:Persistence = "InMemory"): committed batches are lost when the API stops.</summary>
 public sealed class InMemoryBatchRepository : IBatchRepository, ICommittedBatchReader
 {
-    private sealed record Saved(CommittedSnapshot Snapshot, List<CommittedMember> Members, List<ImportIssue> Issues, List<Acknowledgement> Acknowledgements, List<Correction> Corrections, string Report, string OutputFile);
+    private sealed record Saved(CommittedSnapshot Snapshot, List<CommittedMember> Members, List<ImportIssue> Issues, List<Acknowledgement> Acknowledgements, List<Correction> Corrections, string Report, string OutputFile, string MaskedFile);
 
     private readonly ConcurrentDictionary<string, Saved> _batches = new(StringComparer.OrdinalIgnoreCase);
 
     public Task SaveCommittedAsync(CommittedSnapshot snapshot, HeldBatch batch, string reportHtml, string outputFile, CancellationToken ct)
     {
-        _batches[snapshot.Id] = new Saved(snapshot, CommittedSnapshot.Members(batch).ToList(), [.. batch.Result.Issues], [.. batch.Acknowledgements], [.. batch.Result.Corrections], reportHtml, outputFile);
+        _batches[snapshot.Id] = new Saved(snapshot, CommittedSnapshot.Members(batch).ToList(), [.. batch.Result.Issues], [.. batch.Acknowledgements], [.. batch.Result.Corrections], reportHtml, outputFile, CommittedSnapshot.MaskedFileText(batch));
         return Task.CompletedTask;
     }
 
@@ -41,7 +42,7 @@ public sealed class InMemoryBatchRepository : IBatchRepository, ICommittedBatchR
         var matches = saved.Members
             .Where(m => !warningsOnly || m.HasWarnings)
             .Where(m => s.Length == 0 || m.Key.Contains(s, StringComparison.OrdinalIgnoreCase)
-                        || m.Records.Any(r => r.Fields.Any(f => f.Value.Contains(s, StringComparison.OrdinalIgnoreCase))))
+                        || m.Records.Any(r => r.Fields.Any(f => f.Sensitivity == Sensitivity.None && f.Value.Contains(s, StringComparison.OrdinalIgnoreCase))))
             .ToList();
         return Task.FromResult(new Page<CommittedMember>(matches.Skip((page - 1) * pageSize).Take(pageSize).ToList(), matches.Count));
     }
@@ -56,6 +57,11 @@ public sealed class InMemoryBatchRepository : IBatchRepository, ICommittedBatchR
         Task.FromResult<IReadOnlyList<Correction>>(_batches.GetValueOrDefault(id)?.Corrections ?? []);
 
     public Task<string?> ReportAsync(string id, CancellationToken ct) => Task.FromResult(_batches.GetValueOrDefault(id)?.Report);
+
+    public Task<string?> MaskedOutputFileAsync(string id, CancellationToken ct) => Task.FromResult(_batches.GetValueOrDefault(id)?.MaskedFile);
+
+    public Task<CommittedMember?> MemberAsync(string id, int lineNumber, CancellationToken ct) =>
+        Task.FromResult(_batches.GetValueOrDefault(id)?.Members.FirstOrDefault(m => m.LineNumber == lineNumber));
 
     public Task<string?> OutputFileAsync(string id, CancellationToken ct) => Task.FromResult(_batches.GetValueOrDefault(id)?.OutputFile);
 }

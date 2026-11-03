@@ -1,11 +1,13 @@
 import { downloadFile, getJson, openHtml, request, sendJson, uploadWithProgress, type UploadHandle } from './http';
-import type { BatchScope, BatchSummary, CommittedItem, Correction, FilePreview, Issue, MemberRow, Paged, RowFilter, Source } from './types';
+import type { BatchScope, BatchSummary, CommittedItem, Correction, FilePreview, Issue, Me, MemberRow, Paged, RowFilter, Source } from './types';
 
 /** Held batches live under /imports (review, commit, discard); committed ones under /committed (GET only). */
 const base = (scope: BatchScope, id: string) => `${scope === 'held' ? '/imports' : '/committed'}/${encodeURIComponent(id)}`;
 
 /** Every call the UI makes to the API. Components never call this directly: they use the hooks in src/hooks. */
 export const importsService = {
+  me: (signal?: AbortSignal) => getJson<Me>('/me', signal),
+
   sources: (signal?: AbortSignal) => getJson<Source[]>('/sources', signal),
 
   upload: (file: File, source: string, version: string, onProgress: (percent: number) => void): UploadHandle<BatchSummary> => {
@@ -28,6 +30,9 @@ export const importsService = {
 
   exceptions: (scope: BatchScope, id: string, signal?: AbortSignal) => getJson<Issue[]>(`${base(scope, id)}/exceptions`, signal),
 
+  /** One member's real values. Needs the Import.RevealSensitive role; audited by the server. */
+  reveal: (scope: BatchScope, id: string, lineNumber: number) => getJson<MemberRow>(`${base(scope, id)}/rows/${lineNumber}/reveal`),
+
   corrections: (scope: BatchScope, id: string, signal?: AbortSignal) => getJson<Correction[]>(`${base(scope, id)}/corrections`, signal),
 
   filePreview: (scope: BatchScope, id: string, lines: number, signal?: AbortSignal) =>
@@ -37,7 +42,7 @@ export const importsService = {
 
   downloadCorrections: (scope: BatchScope, id: string) => downloadFile(`${base(scope, id)}/corrections.csv`, `${id}_corrections.csv`),
 
-  downloadFile: (scope: BatchScope, id: string) => downloadFile(`${base(scope, id)}/file?download=true`, `${id}.csv`),
+  downloadFile: (scope: BatchScope, id: string) => downloadFile(`${base(scope, id)}/file/download`, `${id}.csv`),
 
   downloadReport: (scope: BatchScope, id: string) =>
     downloadFile(`${base(scope, id)}/report?download=true`, `${id}_reconciliation-report.html`),

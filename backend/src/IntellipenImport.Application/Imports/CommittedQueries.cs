@@ -1,5 +1,6 @@
 using System.Text;
 using IntellipenImport.Application.Abstractions;
+using IntellipenImport.Application.Processing;
 using IntellipenImport.Domain.Batches;
 
 namespace IntellipenImport.Application.Imports;
@@ -8,7 +9,7 @@ namespace IntellipenImport.Application.Imports;
 /// The read-only view of committed batches, from the database. There are no commands here on purpose:
 /// a committed batch cannot be changed, recommitted or discarded. Exports return exactly what was saved at commit.
 /// </summary>
-public sealed class CommittedQueries(ICommittedBatchReader reader, ITargetMappingCatalog mappings)
+public sealed class CommittedQueries(ICommittedBatchReader reader, ITargetMappingCatalog mappings, ICurrentUser user, IAuditLog audit)
 {
     public async Task<PagedDto<CommittedItemDto>> ListAsync(string? search, int page, int pageSize, CancellationToken ct)
     {
@@ -52,8 +53,19 @@ public sealed class CommittedQueries(ICommittedBatchReader reader, ITargetMappin
         page = Math.Max(1, page);
         var warningsOnly = string.Equals(show, "warnings", StringComparison.OrdinalIgnoreCase);
         var result = await reader.MembersAsync(id, search?.Trim(), warningsOnly, page, pageSize, ct);
-        var items = result.Items.Select(m => new MemberRowDto(m.LineNumber, m.Key, true, m.HasWarnings, [], m.Records)).ToList();
+        var items = result.Items.Select(m => new MemberRowDto(m.LineNumber, m.Key, true, m.HasWarnings, [], Masking.Records(m.Records, mappings.Current))).ToList();
         return new PagedDto<MemberRowDto>(items, page, pageSize, result.Total);
+    }
+
+    /// <summary>One saved member's real values. Needs Import.RevealSensitive (or Import.Committer); audited without the values.</summary>
+    public async Task<MemberRowDto> RevealAsync(string id, int lineNumber, CancellationToken ct)
+    {
+        if (!user.CanReveal) throw new ImportProblem(ProblemKind.Forbidden, "Not allowed", "Showing the full values needs the Import.RevealSensitive role.");
+        await RequireAsync(id, ct);
+        var m = await reader.MemberAsync(id, lineNumber, ct)
+            ?? throw new ImportProblem(ProblemKind.NotFound, "Line not found", $"Committed batch {id} has no saved member on line {lineNumber}.");
+        audit.Record("member-revealed", id, user.UserId, $"line {lineNumber}");
+        return new MemberRowDto(m.LineNumber, m.Key, true, m.HasWarnings, [], m.Records);
     }
 
     public async Task<IReadOnlyList<IssueDto>> IssuesAsync(string id, CancellationToken ct)
@@ -72,19 +84,27 @@ public sealed class CommittedQueries(ICommittedBatchReader reader, ITargetMappin
 
     public async Task<DownloadDto> IssuesCsvAsync(string id, CancellationToken ct) => Exports.ExceptionsCsv(id, await IssuesAsync(id, ct));
 
+    /// <summary>A preview of the file with sensitive values masked. A batch committed before masking existed has no masked copy, so it has no preview.</summary>
     public async Task<FilePreviewDto> FilePreviewAsync(string id, int lines, CancellationToken ct)
     {
-        var (name, text) = await FileAsync(id, ct);
+        var s = await RequireAsync(id, ct);
+        var text = await reader.MaskedOutputFileAsync(id, ct);
+        if (string.IsNullOrEmpty(text))
+            throw new ImportProblem(ProblemKind.NotFound, "Preview not available", $"{id} was committed before masked previews existed. A committer can download the file.");
         var all = text.Split('\n').Select(l => l.TrimEnd('\r')).ToList();
         if (all.Count > 0 && all[^1].Length == 0) all.RemoveAt(all.Count - 1);
-        return new FilePreviewDto(name, all.Count, all.Take(Math.Clamp(lines, 1, 500)).ToList());
+        return new FilePreviewDto(s.OutputFileName, all.Count, all.Take(Math.Clamp(lines, 1, 500)).ToList());
     }
 
-    /// <summary>The IntelliPen file byte-for-byte as delivered at commit (its fingerprint matches the report).</summary>
+    /// <summary>The IntelliPen file byte-for-byte as delivered at commit (its fingerprint matches the report). Who may call this is decided by the DownloadFile policy on the endpoint; every download is audited.</summary>
     public async Task<DownloadDto> FileDownloadAsync(string id, CancellationToken ct)
     {
-        var (name, text) = await FileAsync(id, ct);
-        return new DownloadDto(name, "text/csv", Encoding.UTF8.GetBytes(text));
+        var s = await RequireAsync(id, ct);
+        var text = await reader.OutputFileAsync(id, ct);
+        if (string.IsNullOrEmpty(text))
+            throw new ImportProblem(ProblemKind.NotFound, "File not kept", $"The IntelliPen file for {id} was not kept in the database (committed before files were stored).");
+        audit.Record("file-downloaded", id, user.UserId, s.OutputFileName);
+        return new DownloadDto(s.OutputFileName, "text/csv", Encoding.UTF8.GetBytes(text));
     }
 
     /// <summary>The reconciliation report saved at commit (not rebuilt), so it is exactly what was sent.</summary>
@@ -92,15 +112,6 @@ public sealed class CommittedQueries(ICommittedBatchReader reader, ITargetMappin
         await reader.ReportAsync(id, ct) ?? throw NotFound(id);
 
     public async Task<DownloadDto> ReportDownloadAsync(string id, CancellationToken ct) => Exports.Report(id, await ReportAsync(id, ct));
-
-    private async Task<(string Name, string Text)> FileAsync(string id, CancellationToken ct)
-    {
-        var s = await RequireAsync(id, ct);
-        var text = await reader.OutputFileAsync(id, ct);
-        if (string.IsNullOrEmpty(text))
-            throw new ImportProblem(ProblemKind.NotFound, "File not kept", $"The IntelliPen file for {id} was not kept in the database (committed before files were stored).");
-        return (s.OutputFileName, text);
-    }
 
     private async Task<CommittedSnapshot> RequireAsync(string id, CancellationToken ct) => await reader.FindAsync(id, ct) ?? throw NotFound(id);
 

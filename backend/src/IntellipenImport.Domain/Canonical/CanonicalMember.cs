@@ -52,13 +52,20 @@ public static class CanonicalFields
         [Forename] = new(FieldKind.Text, Required: false),
         [Surname] = new(FieldKind.Text, Required: true),
         [Sex] = new(FieldKind.Code, Required: true, CanonicalCodes.Sex),
-        [DateOfBirth] = new(FieldKind.Date, Required: true),
-        [NiNumber] = new(FieldKind.NiNumber, Required: true),
+        [DateOfBirth] = new(FieldKind.Date, Required: true, Sensitivity: Sensitivity.DateOfBirth),
+        [NiNumber] = new(FieldKind.NiNumber, Required: true, Sensitivity: Sensitivity.NiNumber),
         [DateJoined] = new(FieldKind.Date, Required: true),
         [DateLeft] = new(FieldKind.Date, Required: false),
         [Status] = new(FieldKind.Code, Required: true, CanonicalCodes.Status),
         [MaritalStatus] = new(FieldKind.Code, Required: false, CanonicalCodes.MaritalStatus),
         [PartTimeFraction] = new(FieldKind.Decimal, Required: false),
+    };
+
+    /// <summary>How a canonical field (or a salary one) must be masked wherever a member's values are shown.</summary>
+    public static Sensitivity SensitivityOf(string field) => field switch
+    {
+        SalaryAmount or LatestSalary => Sensitivity.Salary,
+        _ => All.TryGetValue(field, out var spec) ? spec.Sensitivity : Sensitivity.None,
     };
 
     /// <summary>Field names the IntelliPen mapping may read, including the per-salary ones.</summary>
@@ -69,7 +76,13 @@ public static class CanonicalFields
 
 public enum FieldKind { Text, Date, Decimal, Code, NiNumber }
 
-public sealed record FieldSpec(FieldKind Kind, bool Required, IReadOnlyList<string>? Codes = null);
+public sealed record FieldSpec(FieldKind Kind, bool Required, IReadOnlyList<string>? Codes = null, Sensitivity Sensitivity = Sensitivity.None);
+
+/// <summary>
+/// Member data that is masked in every screen, export preview and response unless a user with the reveal role asks for it.
+/// Names are not sensitive. Salary covers every salary column and amount.
+/// </summary>
+public enum Sensitivity { None, NiNumber, DateOfBirth, Salary }
 
 /// <summary>The only values canonical code fields may hold. Source schemas translate their own codes into these.</summary>
 public static class CanonicalCodes

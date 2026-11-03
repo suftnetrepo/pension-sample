@@ -36,6 +36,7 @@ public sealed class ProblemExceptionHandler(IProblemDetailsService problems, ILo
         ProblemKind.Invalid => StatusCodes.Status400BadRequest,
         ProblemKind.NotFound => StatusCodes.Status404NotFound,
         ProblemKind.Conflict => StatusCodes.Status409Conflict,
+        ProblemKind.Forbidden => StatusCodes.Status403Forbidden,
         ProblemKind.Gone => StatusCodes.Status410Gone,
         ProblemKind.TooLarge => StatusCodes.Status413PayloadTooLarge,
         ProblemKind.Unprocessable => StatusCodes.Status422UnprocessableEntity,

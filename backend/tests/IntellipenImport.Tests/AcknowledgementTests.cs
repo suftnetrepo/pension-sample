@@ -91,66 +91,7 @@ public class AcknowledgementTests
 
     // ---- Application ----
 
-    private sealed class Schemas : ISourceSchemaCatalog
-    {
-        public IReadOnlyList<SourceSchema> All => AllSchemas;
-        public SourceSchema? Find(string source, string version) => AllSchemas.FirstOrDefault(s => s.Source == source && s.Version == version);
-    }
-
-    private sealed class Mappings : ITargetMappingCatalog { public TargetMapping Current => Mapping; }
-
-    private sealed class Store : IHeldBatchStore
-    {
-        private readonly Dictionary<string, HeldBatch> _batches = [];
-        private readonly Dictionary<string, BatchRecord> _records = [];
-        public string NewId() => "IMP-20261103-TEST01";
-        public Task SaveBatchAsync(HeldBatch batch, CancellationToken ct) { _batches[batch.Id] = batch; return Task.CompletedTask; }
-        public Task<HeldBatch?> GetBatchAsync(string id, CancellationToken ct) => Task.FromResult(_batches.GetValueOrDefault(id));
-        public Task RemoveBatchAsync(string id, CancellationToken ct) { _batches.Remove(id); return Task.CompletedTask; }
-        public Task SaveRecordAsync(BatchRecord record, CancellationToken ct) { _records[record.Id] = record; return Task.CompletedTask; }
-        public Task<BatchRecord?> GetRecordAsync(string id, CancellationToken ct) => Task.FromResult(_records.GetValueOrDefault(id));
-    }
-
-    private sealed class User(string id) : ICurrentUser { public string UserId => id; public bool IsCommitter => true; }
-    private sealed class Files : IIntellipenFileTarget { public Task<string> WriteAsync(string n, byte[] c, CancellationToken ct) => Task.FromResult("test"); }
-    private sealed class Reports : IReportSender { public Task<string> SendAsync(string b, string s, string h, CancellationToken ct) => Task.FromResult("test"); }
-    private sealed class Audit : IAuditLog
-    {
-        public List<string> Lines { get; } = [];
-        public void Record(string action, string batchId, string user, string detail = "") => Lines.Add($"{action}|{batchId}|{user}|{detail}");
-        public void Failure(string action, string batchId, Exception error) { }
-    }
-
-    private sealed class App
-    {
-        public required ImportCommands Commands { get; init; }
-        public required ImportQueries Queries { get; init; }
-        public required CommittedQueries Committed { get; init; }
-        public required Audit Audit { get; init; }
-        public string Id { get; set; } = string.Empty;
-    }
-
-    private static App Build(bool requireAcknowledged = true, string user = "ann")
-    {
-        var store = new Store();
-        var options = new ImportOptions { RequireWarningsAcknowledged = requireAcknowledged };
-        var clock = new FixedClock(At);
-        var audit = new Audit();
-        var currentUser = new User(user);
-        var access = new BatchAccess(store, new Mappings(), currentUser, options, clock, audit);
-        var repository = new InMemoryBatchRepository();
-        return new App
-        {
-            Commands = new ImportCommands(new Schemas(), new Mappings(), store, repository, new Files(), new Reports(), access, currentUser, options, clock, audit),
-            Queries = new ImportQueries(new Schemas(), access),
-            Committed = new CommittedQueries(repository, new Mappings()),
-            Audit = audit,
-        };
-    }
-
-    private sealed class FixedClock(DateTimeOffset now) : TimeProvider { public override DateTimeOffset GetUtcNow() => now; }
-
-    private static async Task<App> UploadAsync(App app)
+    private static async Task<TestApp> UploadAsync(TestApp app)
     {
         var csv = WithLines(GoodLine, PartTimeLine.Replace("52000", "\"£52,000\"", StringComparison.Ordinal), "DB023,Laura Jones,F,22/12/1961,gh 60 60 73 a,01/04/2006,,active,67200,69600,72000,1,Y");
         await using var content = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(csv));
@@ -162,7 +103,7 @@ public class AcknowledgementTests
     [Fact]
     public async Task Acknowledge_then_commit_succeeds_and_the_committed_view_shows_who_checked()
     {
-        var app = await UploadAsync(Build());
+        var app = await UploadAsync(TestApp.Build());
         var before = await app.Queries.GetAsync(app.Id, default);
         Assert.Equal((1, false, 1, 3), (before.WarningsPending, before.CanCommit, before.Counts!.Warnings, before.Counts.Corrections));
 
@@ -199,7 +140,7 @@ public class AcknowledgementTests
     [Fact]
     public async Task Commit_with_a_warning_still_to_check_is_refused_with_a_clear_message()
     {
-        var app = await UploadAsync(Build());
+        var app = await UploadAsync(TestApp.Build());
         var problem = await Assert.ThrowsAsync<ImportProblem>(() => app.Commands.CommitAsync(app.Id, reviewed: true, default));
         Assert.Equal(ProblemKind.Conflict, problem.Kind);
         Assert.Contains("1 warning is still to be checked", problem.Message);
@@ -208,7 +149,7 @@ public class AcknowledgementTests
     [Fact]
     public async Task With_the_rule_switched_off_commit_needs_no_checks()
     {
-        var app = await UploadAsync(Build(requireAcknowledged: false));
+        var app = await UploadAsync(TestApp.Build(requireAcknowledged: false));
         Assert.True((await app.Queries.GetAsync(app.Id, default)).CanCommit);
         Assert.Equal(BatchStatus.Committed, (await app.Commands.CommitAsync(app.Id, reviewed: true, default)).Status);
     }
@@ -216,7 +157,7 @@ public class AcknowledgementTests
     [Fact]
     public async Task An_error_cannot_be_checked_and_a_committed_batch_cannot_be_changed()
     {
-        var app = await UploadAsync(Build());
+        var app = await UploadAsync(TestApp.Build());
         var warning = (await app.Queries.IssuesAsync(app.Id, default)).Single(i => i.Severity == "Warning");
         await app.Commands.AcknowledgeAsync(app.Id, [warning.Id], null, default);
         await app.Commands.CommitAsync(app.Id, reviewed: true, default);
@@ -230,7 +171,7 @@ public class AcknowledgementTests
     [Fact]
     public async Task Undo_puts_the_warning_back_to_pending()
     {
-        var app = await UploadAsync(Build());
+        var app = await UploadAsync(TestApp.Build());
         var warning = (await app.Queries.IssuesAsync(app.Id, default)).Single(i => i.Severity == "Warning");
         await app.Commands.AcknowledgeAsync(app.Id, [warning.Id], null, default);
         var summary = await app.Commands.UnacknowledgeAsync(app.Id, warning.Id, default);
@@ -241,7 +182,7 @@ public class AcknowledgementTests
     [Fact]
     public async Task The_report_says_who_checked_each_warning_and_lists_the_corrections()
     {
-        var app = await UploadAsync(Build());
+        var app = await UploadAsync(TestApp.Build());
         var warning = (await app.Queries.IssuesAsync(app.Id, default)).Single(i => i.Severity == "Warning");
         var notChecked = await app.Queries.ReportAsync(app.Id, default);
         Assert.Contains("Not checked", notChecked);

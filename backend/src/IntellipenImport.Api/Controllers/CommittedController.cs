@@ -28,6 +28,11 @@ public sealed class CommittedController(CommittedQueries queries) : ControllerBa
         [FromQuery] string? search = null, [FromQuery] string? show = null, CancellationToken ct = default) =>
         queries.RowsAsync(id, page, pageSize, search, show, ct);
 
+    /// <summary>One saved member's unmasked values. Needs Import.RevealSensitive or Import.Committer; audited.</summary>
+    [HttpGet("{id}/rows/{lineNumber:int}/reveal")]
+    [Authorize(Policy = Policies.Reveal)]
+    public Task<MemberRowDto> Reveal(string id, int lineNumber, CancellationToken ct) => queries.RevealAsync(id, lineNumber, ct);
+
     [HttpGet("{id}/exceptions")]
     public Task<IReadOnlyList<IssueDto>> Exceptions(string id, CancellationToken ct) => queries.IssuesAsync(id, ct);
 
@@ -40,10 +45,15 @@ public sealed class CommittedController(CommittedQueries queries) : ControllerBa
     [HttpGet("{id}/corrections.csv")]
     public async Task<FileContentResult> CorrectionsCsv(string id, CancellationToken ct) => Download(await queries.CorrectionsCsvAsync(id, ct));
 
-    /// <summary>Preview of the IntelliPen file as delivered, or the whole file with download=true.</summary>
+    /// <summary>Preview of the IntelliPen file: the first lines, with sensitive values masked.</summary>
     [HttpGet("{id}/file")]
-    public async Task<IActionResult> OutputFile(string id, [FromQuery] int lines = 50, [FromQuery] bool download = false, CancellationToken ct = default) =>
-        download ? Download(await queries.FileDownloadAsync(id, ct)) : Ok(await queries.FilePreviewAsync(id, lines, ct));
+    public async Task<IActionResult> OutputFile(string id, [FromQuery] int lines = 50, CancellationToken ct = default) =>
+        Ok(await queries.FilePreviewAsync(id, lines, ct));
+
+    /// <summary>The whole IntelliPen file exactly as delivered. The DownloadFile policy decides who may (see Program.cs); every download is audited.</summary>
+    [HttpGet("{id}/file/download")]
+    [Authorize(Policy = Policies.DownloadFile)]
+    public async Task<FileContentResult> OutputFileDownload(string id, CancellationToken ct = default) => Download(await queries.FileDownloadAsync(id, ct));
 
     /// <summary>The reconciliation report saved at commit, as a page or (download=true) a file.</summary>
     [HttpGet("{id}/report")]

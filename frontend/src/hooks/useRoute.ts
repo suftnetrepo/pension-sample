@@ -20,13 +20,14 @@ function read(): Route {
   return { page: 'import', batchId: q.get('batch') };
 }
 
-function write(route: Route) {
+function write(route: Route, replace = false) {
   const url = new URL(window.location.href);
   url.search = '';
   if (route.page === 'import' && route.batchId) url.searchParams.set('batch', route.batchId);
   if (route.page === 'committed-list') url.searchParams.set('view', 'committed');
   if (route.page === 'committed') url.searchParams.set('committed', route.batchId);
-  window.history.pushState(null, '', url);
+  if (replace) window.history.replaceState(null, '', url);
+  else window.history.pushState(null, '', url);
 }
 
 export function useRoute() {
@@ -38,8 +39,9 @@ export function useRoute() {
     return () => window.removeEventListener('popstate', onPop);
   }, []);
 
-  const go = useCallback((next: Route) => {
-    write(next);
+  /** `replace` swaps the current history entry instead of adding one (used for redirects, so Back doesn't bounce). */
+  const go = useCallback((next: Route, replace = false) => {
+    write(next, replace);
     setRoute(next);
     window.scrollTo({ top: 0 });
   }, []);

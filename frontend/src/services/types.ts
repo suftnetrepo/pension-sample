@@ -172,3 +172,10 @@ export type RowFilter = 'accepted' | 'rejected' | 'warnings' | 'all';
 
 /** Which store a batch is read from: held for review (/imports) or committed, read-only (/committed). */
 export type BatchScope = 'held' | 'committed';
+
+/** The signed-in user and what they may do. The API enforces all of it; the UI uses this only to hide buttons that would be refused. */
+export interface Me {
+  userId: string;
+  roles: string[];
+  can: { upload: boolean; commit: boolean; reveal: boolean; downloadFile: boolean; viewCommitted: boolean };
+}

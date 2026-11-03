@@ -53,6 +53,10 @@ public interface ICommittedBatchReader
     Task<IReadOnlyList<Correction>> CorrectionsAsync(string id, CancellationToken ct);
     Task<string?> ReportAsync(string id, CancellationToken ct);
     Task<string?> OutputFileAsync(string id, CancellationToken ct);
+    /// <summary>The IntelliPen file with sensitive values masked, for previews. Null for a batch committed before masking existed.</summary>
+    Task<string?> MaskedOutputFileAsync(string id, CancellationToken ct);
+    /// <summary>One accepted member with its records unmasked, or null.</summary>
+    Task<CommittedMember?> MemberAsync(string id, int lineNumber, CancellationToken ct);
 }
 
 public sealed record Page<T>(IReadOnlyList<T> Items, int Total);
@@ -81,6 +85,8 @@ public interface ICurrentUser
 {
     string UserId { get; }
     bool IsCommitter { get; }
+    /// <summary>May see unmasked member values (Import.RevealSensitive, or a committer).</summary>
+    bool CanReveal { get; }
 }
 
 /// <summary>Audit events: batch ID, user and counts only, never member data.</summary>

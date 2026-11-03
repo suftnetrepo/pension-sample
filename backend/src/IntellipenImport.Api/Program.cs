@@ -39,6 +39,8 @@ else
 builder.Services.AddAuthorizationBuilder()
     .AddPolicy(Policies.Upload, p => p.RequireRole(Roles.Uploader, Roles.Committer))
     .AddPolicy(Policies.Commit, p => p.RequireRole(Roles.Committer))
+    .AddPolicy(Policies.DownloadFile, p => p.RequireRole(Roles.Committer))
+    .AddPolicy(Policies.Reveal, p => p.RequireRole(Roles.RevealSensitive, Roles.Committer))
     .AddPolicy(Policies.View, p => p.RequireRole(Roles.Viewer, Roles.Uploader, Roles.Committer))
     .SetFallbackPolicy(new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
 
@@ -47,6 +49,9 @@ var app = builder.Build();
 // Check every schema and the mapping, and create the database tables, before taking any request.
 await app.Services.InitialiseIntellipenImportAsync();
 
+// First, so every response carries the headers, including errors and downloads.
+app.UseMiddleware<SecurityHeadersMiddleware>();
+if (!app.Environment.IsDevelopment()) app.UseHsts();
 app.UseExceptionHandler();
 app.UseStatusCodePages();
 app.UseHttpsRedirection();

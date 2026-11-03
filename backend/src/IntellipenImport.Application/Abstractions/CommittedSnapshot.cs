@@ -45,6 +45,10 @@ public sealed class CommittedSnapshot
         };
     }
 
+    /// <summary>The delivered file's text with sensitive values masked, kept beside the real file so previews never need the real one.</summary>
+    public static string MaskedFileText(HeldBatch batch) =>
+        string.Join(batch.OutputLineBreak, batch.Result.MaskedOutputLines) + batch.OutputLineBreak;
+
     /// <summary>The accepted members as they were saved.</summary>
     public static IEnumerable<CommittedMember> Members(HeldBatch batch) =>
         batch.Result.Members.Where(m => m.Accepted).Select(m => new CommittedMember(m.LineNumber, m.Key, m.HasWarnings, m.Records));

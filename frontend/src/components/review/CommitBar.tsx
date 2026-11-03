@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useMe } from '@/hooks/queries';
 import { useCommitBatch, useDiscardBatch } from '@/hooks/mutations';
 import type { BatchSummary } from '@/services/types';
 import { formatNumber } from '@/services/format';
@@ -26,6 +27,7 @@ export function CommitBar({ batch, onDiscarded, onShowUnchecked }: { batch: Batc
   const discard = useDiscardBatch(batch.id, onDiscarded);
   const busy = commit.isPending || discard.isPending;
   const counts = batch.counts!;
+  const { can } = useMe();
 
   const blocked = !batch.balanced
     ? 'The reconciliation does not balance, so this batch cannot be committed.'
@@ -34,7 +36,7 @@ export function CommitBar({ batch, onDiscarded, onShowUnchecked }: { batch: Batc
       : batch.warningsPending > 0
         ? `${formatNumber(batch.warningsPending)} ${batch.warningsPending === 1 ? 'warning' : 'warnings'} still to check`
         : !batch.canCommit
-          ? 'You can review this batch, but committing needs the Import.Committer role.'
+          ? 'You can review this batch. A committer has to commit it.'
           : null;
   const error = commit.error ?? discard.error;
 
@@ -52,12 +54,14 @@ export function CommitBar({ batch, onDiscarded, onShowUnchecked }: { batch: Batc
         )}
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="grid grid-cols-1 gap-1.5">
-            <div className="flex min-h-11 items-center gap-3">
-              <Checkbox id="reviewed" checked={reviewed} onCheckedChange={(v) => setReviewed(v === true)} disabled={!!blocked || busy} />
-              <Label htmlFor="reviewed" className="cursor-pointer">
-                I have reviewed the transformed data, exceptions and reconciliation
-              </Label>
-            </div>
+            {can.commit && (
+              <div className="flex min-h-11 items-center gap-3">
+                <Checkbox id="reviewed" checked={reviewed} onCheckedChange={(v) => setReviewed(v === true)} disabled={!!blocked || busy} />
+                <Label htmlFor="reviewed" className="cursor-pointer">
+                  I have reviewed the transformed data, exceptions and reconciliation
+                </Label>
+              </div>
+            )}
             <span className="text-muted-foreground flex flex-wrap items-center gap-2 text-xs">
               {batch.warningsPending > 0 && batch.balanced && counts.accepted > 0 && (
                 <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={onShowUnchecked}>
@@ -89,9 +93,11 @@ export function CommitBar({ batch, onDiscarded, onShowUnchecked }: { batch: Batc
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
-            <Button onClick={() => commit.mutate()} disabled={!reviewed || !!blocked || busy}>
-              {commit.isPending ? 'Committing…' : 'Commit and send report'}
-            </Button>
+            {can.commit && (
+              <Button onClick={() => commit.mutate()} disabled={!reviewed || !!blocked || busy}>
+                {commit.isPending ? 'Committing…' : 'Commit and send report'}
+              </Button>
+            )}
           </div>
         </div>
       </CardContent>

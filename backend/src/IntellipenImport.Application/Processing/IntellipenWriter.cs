@@ -18,7 +18,8 @@ internal static class IntellipenWriter
             {
                 var record = new TargetRecord { Type = def.Type };
                 foreach (var f in def.Fields)
-                    record.Fields.Add(new TargetField(f.Name, f.Constant ?? Format(Read(m, f.From!, salary), f)));
+                    record.Fields.Add(new TargetField(f.Name, f.Constant ?? Format(Read(m, f.From!, salary), f),
+                        f.Constant is null ? CanonicalFields.SensitivityOf(f.From!) : Sensitivity.None));
                 records.Add(record);
             }
         }
@@ -54,6 +55,17 @@ internal static class IntellipenWriter
         string s => s,
         _ => Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty,
     };
+
+    /// <summary>The file's lines with every record line rebuilt from masked values; header and trailer lines are kept as they are.</summary>
+    public static List<string> MaskedLines(List<string> lines, List<TargetRecord> records, TargetMapping mapping)
+    {
+        var d = mapping.Output.Delimiter[0];
+        var masked = new List<string>(lines);
+        var first = mapping.Output.Header is { Count: > 0 } ? 1 : 0;
+        for (var i = 0; i < records.Count; i++)
+            masked[first + i] = string.Join(d, Masking.Record(records[i], mapping).Fields.Select(f => CsvText.Escape(f.Value, d)));
+        return masked;
+    }
 
     public static (List<string> Lines, string FileName, bool TrailerOk) File(List<TargetRecord> records, TargetMapping mapping, string scheme, ImportContext ctx)
     {

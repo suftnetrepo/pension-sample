@@ -80,4 +80,35 @@ public sealed class SqliteAcknowledgementTests : IDisposable
         Assert.Empty(await repo.AcknowledgementsAsync("OLD", default));
         Assert.Empty(await repo.CorrectionsAsync("OLD", default));
     }
+
+    [Fact]
+    public async Task The_searchable_text_column_holds_no_NI_number_birth_date_or_salary()
+    {
+        var repo = new SqlBatchRepository(new Factory(_file));
+        await repo.InitialiseAsync();
+        var batch = new HeldBatch { Id = "IMP-SQL-2", Result = Run(Sample("ashwood-payroll_v1_sample.csv")) };
+        var record = new BatchRecord { Id = batch.Id, Status = BatchStatus.ReadyForReview, UploadedBy = "ann" };
+        record.MarkCommitted("bob", DateTimeOffset.UtcNow, new CommitOutcome());
+        await repo.SaveCommittedAsync(CommittedSnapshot.From(batch, record), batch, "<html/>", "file", default);
+
+        var searchable = new List<string>();
+        await using (var db = new SqliteConnection($"Data Source={_file};Pooling=False"))
+        {
+            await db.OpenAsync();
+            await using var cmd = db.CreateCommand();
+            cmd.CommandText = "SELECT search_text FROM import_member_record WHERE batch_id = 'IMP-SQL-2'";
+            await using var reader = await cmd.ExecuteReaderAsync();
+            while (await reader.ReadAsync()) searchable.Add(reader.GetString(0));
+        }
+
+        Assert.Equal(batch.Result.Members.Where(m => m.Accepted).Sum(m => m.Records.Count), searchable.Count); // every record row has one
+        var all = string.Join("\n", searchable);
+        SecurityTests.AssertNoSensitiveValues(all, "search_text column");
+        Assert.Contains("DB001", all);   // member ID is searchable
+        Assert.Contains("Okafor", all);  // so are names
+        // and the masking can't be dodged by searching: the real NI number finds nothing, a surname finds the member
+        Assert.Equal(0, (await repo.MembersAsync("IMP-SQL-2", "AB123456C", false, 1, 50, default)).Total);
+        Assert.Equal(0, (await repo.MembersAsync("IMP-SQL-2", "50000", false, 1, 50, default)).Total);
+        Assert.Equal(1, (await repo.MembersAsync("IMP-SQL-2", "Okafor", false, 1, 50, default)).Total);
+    }
 }

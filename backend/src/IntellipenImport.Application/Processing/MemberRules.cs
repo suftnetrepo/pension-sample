@@ -43,10 +43,10 @@ internal static partial class MemberRules
 
         // Dates that must make sense together
         if (m.DateOfBirth is { } dob && m.DateJoined is { } joined && joined <= dob)
-            Error(CanonicalFields.DateJoined, $"Must be after {r.ColumnOf(CanonicalFields.DateOfBirth)} ({r.Get(row, r.ColumnOf(CanonicalFields.DateOfBirth))})",
+            Error(CanonicalFields.DateJoined, $"Must be after {r.ColumnOf(CanonicalFields.DateOfBirth)} ({r.Shown(row, r.ColumnOf(CanonicalFields.DateOfBirth))})",
                 "Ask the employer to confirm the date of birth and joining date and send a corrected file", IssueOwner.Employer);
         if (m.DateJoined is { } j && m.DateLeft is { } left && left <= j)
-            Error(CanonicalFields.DateLeft, $"Must be after {r.ColumnOf(CanonicalFields.DateJoined)} ({r.Get(row, r.ColumnOf(CanonicalFields.DateJoined))})",
+            Error(CanonicalFields.DateLeft, $"Must be after {r.ColumnOf(CanonicalFields.DateJoined)} ({r.Shown(row, r.ColumnOf(CanonicalFields.DateJoined))})",
                 "Ask the employer to confirm both dates and send a corrected file", IssueOwner.Employer);
         if (m.Status == "Deferred" && m.DateLeft is null && !alreadyFailed.Contains(r.ColumnOf(CanonicalFields.DateLeft)))
             Error(CanonicalFields.DateLeft, $"Must not be blank when {r.ColumnOf(CanonicalFields.Status)} is Deferred", "Ask the employer to confirm the leaving date and send a corrected file", IssueOwner.Employer);

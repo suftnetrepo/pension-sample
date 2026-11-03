@@ -1,3 +1,5 @@
+using IntellipenImport.Domain.Canonical;
+
 namespace IntellipenImport.Domain.Processing;
 
 /// <summary>Everything one processed file produced. Held (encrypted) until the batch is committed, discarded or expires.</summary>
@@ -26,6 +28,8 @@ public sealed class ImportResult
     public Dictionary<string, int> RecordCounts { get; set; } = [];
     public string OutputFileName { get; set; } = string.Empty;
     public List<string> OutputLines { get; set; } = [];
+    /// <summary>The same lines with every sensitive value masked. This is what previews show; <see cref="OutputLines"/> is the delivered file.</summary>
+    public List<string> MaskedOutputLines { get; set; } = [];
 
     public int WarningCount => Issues.Count(i => i.Severity == Severity.Warning);
     public int ErrorCount => Issues.Count(i => i.Severity == Severity.Error);
@@ -61,7 +65,9 @@ public sealed class TargetRecord
     public List<TargetField> Fields { get; set; } = [];
 }
 
-public sealed record TargetField(string Name, string Value);
+/// <param name="Sensitivity">Set from the mapping when the record is written, so masking needs no lookup later. Null (a batch saved
+/// before masking existed) is resolved against the current mapping, and masked if it can't be.</param>
+public sealed record TargetField(string Name, string Value, Sensitivity? Sensitivity = null);
 
 /// <summary>Who has to act on an issue.</summary>
 public enum IssueOwner { Employer, Payroll, SchemeAdministrator }

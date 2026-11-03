@@ -37,7 +37,7 @@ public class CommittedViewTests
 
         var repository = new InMemoryBatchRepository();
         await repository.SaveCommittedAsync(CommittedSnapshot.From(batch, record), batch, Report, fileText, CancellationToken.None);
-        return (new CommittedQueries(repository, new Mappings()), batch, fileText);
+        return (new CommittedQueries(repository, new Mappings(), new TestApp.User("committer", committer: true, reveal: false), new TestApp.AuditLog()), batch, fileText);
     }
 
     [Fact]
@@ -82,7 +82,8 @@ public class CommittedViewTests
 
         var preview = await queries.FilePreviewAsync(batch.Id, 5, CancellationToken.None);
         Assert.Equal(batch.Result.OutputLines.Count, preview.TotalLines);
-        Assert.Equal(batch.Result.OutputLines.Take(5), preview.Lines);
+        Assert.Equal(batch.Result.MaskedOutputLines.Take(5), preview.Lines); // the preview is the masked file, never the real lines
+        Assert.NotEqual(batch.Result.OutputLines.Take(5), preview.Lines);
 
         Assert.Equal(Report, await queries.ReportAsync(batch.Id, CancellationToken.None));
         var reportFile = await queries.ReportDownloadAsync(batch.Id, CancellationToken.None);

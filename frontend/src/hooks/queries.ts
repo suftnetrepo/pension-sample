@@ -6,6 +6,16 @@ import { queryKeys } from './queryKeys';
 // Read hooks. A held batch never changes until it closes, and a committed batch never changes at all, so rows, exceptions
 // and file previews are cached for good (staleTime: Infinity); switching tabs or pages back and forth costs no extra requests.
 
+/**
+ * Who is signed in and what they may do: fixed for the session, so fetched once. While it loads, or if it fails, `can` is
+ * all-true: the buttons show and the API still refuses anything not allowed, so a failure here never locks a user out.
+ */
+export function useMe() {
+  const query = useQuery({ queryKey: queryKeys.me, queryFn: ({ signal }) => importsService.me(signal), staleTime: Infinity });
+  const can = query.data?.can ?? { upload: true, commit: true, reveal: true, downloadFile: true, viewCommitted: true };
+  return { ...query, can };
+}
+
 /** Sources and their agreed versions: they change only with a release. */
 export function useSources() {
   return useQuery({ queryKey: queryKeys.sources, queryFn: ({ signal }) => importsService.sources(signal), staleTime: Infinity });

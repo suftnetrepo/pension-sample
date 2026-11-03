@@ -2,7 +2,7 @@ using IntellipenImport.Domain.Processing;
 
 namespace IntellipenImport.Application.Abstractions;
 
-public enum ProblemKind { Invalid, NotFound, Conflict, Gone, TooLarge, Unprocessable }
+public enum ProblemKind { Invalid, NotFound, Conflict, Gone, TooLarge, Unprocessable, Forbidden }
 
 /// <summary>An expected failure with a plain-English message for the user. The API turns it into problem details.</summary>
 public sealed class ImportProblem(ProblemKind kind, string title, string detail, SchemaMismatch? mismatch = null) : Exception(detail)

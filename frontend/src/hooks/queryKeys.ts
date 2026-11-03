@@ -7,6 +7,7 @@ import type { BatchScope, RowFilter } from '../services/types';
 const root = (scope: BatchScope) => (scope === 'held' ? 'batch' : 'committed');
 
 export const queryKeys = {
+  me: ['me'] as const,
   sources: ['sources'] as const,
   committedList: (search: string, page: number, pageSize: number) => ['committed-list', search, page, pageSize] as const,
   committedListAll: ['committed-list'] as const,

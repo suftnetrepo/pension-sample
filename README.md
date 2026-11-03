@@ -94,7 +94,7 @@ the reconciliation report, the IntelliPen file and the exceptions CSV. There is 
 - Everything shown is what was saved at commit: the figures, the report as sent, and the IntelliPen file byte for byte (its
   fingerprint matches the report). Later config changes don't alter a committed batch.
 - The raw source line is not kept after commit, only the IntelliPen records it became; rejected lines appear in the exceptions.
-- Role `Import.Viewer` can view and export committed batches and do nothing else. Uploaders and committers can view them too.
+- Role `Import.Viewer` can view and export committed batches (masked) and do nothing else. Uploaders and committers can view them too.
   Try it with the header `X-Dev-Roles: Import.Viewer`.
 - A database created by an earlier build is upgraded at start-up (columns added to `import_batch` and `import_issue`, and the `import_correction` table created). Batches committed before the upgrade show
   their counts but have no stored IntelliPen file.
@@ -112,11 +112,11 @@ cd backend
 dotnet test
 ```
 
-79 tests: CSV reading, schema matching (missing / extra / duplicated columns, wrong delimiter), every validation rule, both
+108 tests (97 unit/use-case in `IntellipenImport.Tests`, 11 over real HTTP in `IntellipenImport.Api.Tests`, which uses the `Microsoft.AspNetCore.Mvc.Testing` package): CSV reading, schema matching (missing / extra / duplicated columns, wrong delimiter), every validation rule, both
 **golden sample files** (exact expected IntelliPen output for each source), the proof that the same member from two
 different sources gives identical IntelliPen records, config checks, the batch status rules, the read-only committed view (it shows and exports exactly what was saved),
 checking warnings (domain rules, the commit gate, commit refused with a pending warning, checks surviving into the committed view and the report),
-each automatic correction (and the cases that must not be corrected), and the SQLite save/read/upgrade of checks and corrections.
+each automatic correction (and the cases that must not be corrected), the SQLite save/read/upgrade of checks and corrections, and security: masking on every endpoint for held and committed batches, reveal and download roles and their audit entries, response headers, and an upload that never touches disk.
 Front end: `npm run build` type-checks and builds.
 
 ## Back end: clean architecture
@@ -202,11 +202,59 @@ has `warningsPending`, and `canCommit` is false while it is above zero (when the
 | | `OutputPath` | `../../output` |
 | | `Email:Enabled`, `Host`, `Port`, `From`, `To` | off |
 
+## Security
+
+**Where member data lives**
+
+- Before commit: only in the temporary store, in memory, **encrypted** (ASP.NET Data Protection) and deleted when the batch is committed,
+  discarded or expires (24 hours). Nothing is written to disk: the upload is streamed into memory (`MultipartReader`; there is no `IFormFile`,
+  which would spill files over 64 KB to a temporary folder; a test points ASP.NET's temp folder at a folder that does not exist and uploads a
+  200 KB file to prove it).
+- After commit: SQLite (members, issues, corrections, who checked what, the report, the IntelliPen file), plus the IntelliPen file and the report in
+  `output/` (the file is what IntelliPen receives, so it is complete).
+
+**What is masked.** Wherever the API returns member values (transformed rows, the source line, file preview, exceptions, corrections, the report
+and the exceptions/corrections CSVs; held and committed alike) these are masked by the server, so the browser never receives the real value:
+
+| Data | Shown as |
+| --- | --- |
+| NI number | `AB12****C` |
+| Date of birth | `**/**/1967` (year only) |
+| Salary amounts | `****` |
+
+Names, member IDs, dates joined/left and codes are not masked. The fields are marked in the domain (`Sensitivity` on `CanonicalFields`); the
+mapping to source columns and IntelliPen fields is done in `Application/Processing/Masking.cs`. Search ignores sensitive columns, so it can't be used to probe them.
+
+**Who can see or download real values**
+
+| Action | Needs | Logged |
+| --- | --- | --- |
+| Reveal one member (`GET .../rows/{line}/reveal`, held or committed) | `Import.RevealSensitive` or `Import.Committer` | batch, line, user (never the values) |
+| Download the full IntelliPen file (`GET .../file/download`, held or committed) | the `DownloadFile` policy in `Program.cs` (today `Import.Committer`); it is also what `/api/v1/me` reports as `downloadFile` | batch, file name, user |
+| Everything else (rows, preview, exceptions, reports, CSV exports) | their usual role; masked values only | - |
+
+The UI's **Reveal** button shows the real values for 60 seconds, or until another member is chosen.
+
+**Responses.** Every response has `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` and `X-Frame-Options: DENY`; everything under
+`/api` (data and downloads) also has `Cache-Control: no-store` and `Pragma: no-cache`. HSTS is added outside Development.
+
+**Known limits.** A batch committed before masking existed has no masked file preview (it says so; a committer can still download the file), and
+its member search finds only the member ID. Its saved records are masked by the current mapping, or outright if a field isn't recognised.
+
+**Production to-do**
+
+1. **Data Protection keys** in Azure Key Vault (and persisted, so held batches survive a restart and every server can read them).
+2. **Database encryption at rest** (TDE on SQL Server, or an encrypted volume for SQLite).
+3. **Folder permissions** on `output/intellipen/` and `output/reports/`: the service account writes, only the people and systems that need the files read.
+4. **Content-Security-Policy** (and TLS settings) on the site hosting the front end; the API cannot set it for the static files.
+5. **Retention periods** for committed data, the IntelliPen files and reports, and audit logs: to be agreed with Isio.
+6. Sign-in with Entra ID and the app roles, including the new `Import.RevealSensitive` (see below).
+
 ## Before production
 
 1. **IntelliPen mapping**: replace the placeholder (above).
 2. **Sign-in**: `Program.cs` refuses to start outside Development until Entra ID is added
-   (`Microsoft.AspNetCore.Authentication.JwtBearer`, app roles `Import.Uploader` / `Import.Committer` / `Import.Viewer`). In the front end call
+   (`Microsoft.AspNetCore.Authentication.JwtBearer`, app roles `Import.Uploader` / `Import.Committer` / `Import.Viewer` / `Import.RevealSensitive`). In the front end call
    `setTokenProvider` (services/http.ts) with an MSAL token function.
 3. **Database**: SQLite suits one server. For the team's SQL Server, implement `IDbConnectionFactory` with
    `SqlConnection` and adjust the SQL in `SqliteSql.cs` (parameters and `LIMIT` → `TOP`).

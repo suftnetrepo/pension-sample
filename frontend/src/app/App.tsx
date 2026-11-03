@@ -1,4 +1,5 @@
-import { useBatch } from "@/hooks/queries";
+import { useEffect } from "react";
+import { useBatch, useMe } from "@/hooks/queries";
 import { useRoute } from "@/hooks/useRoute";
 import {
   ErrorBanner,
@@ -18,6 +19,7 @@ export default function App() {
   const [route, go] = useRoute();
   const importBatchId = route.page === "import" ? route.batchId : null;
   const batch = useBatch(importBatchId);
+  const { can, isSuccess: meKnown } = useMe();
 
   const newImport = () => go({ page: "import", batchId: null });
   const viewCommitted = (id: string) => go({ page: "committed", batchId: id });
@@ -26,6 +28,11 @@ export default function App() {
   const status = importBatchId ? batch.data?.status : undefined;
   const current = status === "ReadyForReview" ? 1 : status ? 2 : 0;
   const inCommitted = route.page !== "import";
+
+  // A viewer-only user can't import: open the committed batches instead (the API refuses imports for them anyway).
+  useEffect(() => {
+    if (meKnown && !can.upload && route.page === "import") go({ page: "committed-list" }, true);
+  }, [meKnown, can.upload, route.page, go]);
 
   return (
     <div className="min-h-screen">
@@ -66,14 +73,16 @@ export default function App() {
             </div>
           </div>
           <nav aria-label="Main" className="flex gap-1">
-            <Button
-              variant="ghost"
-              className={cn(!inCommitted && "bg-accent text-accent-foreground")}
-              aria-current={!inCommitted ? "page" : undefined}
-              onClick={newImport}
-            >
-              New import
-            </Button>
+            {can.upload && (
+              <Button
+                variant="ghost"
+                className={cn(!inCommitted && "bg-accent text-accent-foreground")}
+                aria-current={!inCommitted ? "page" : undefined}
+                onClick={newImport}
+              >
+                New import
+              </Button>
+            )}
             <Button
               variant="ghost"
               className={cn(inCommitted && "bg-accent text-accent-foreground")}

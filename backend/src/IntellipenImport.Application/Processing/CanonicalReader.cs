@@ -11,7 +11,7 @@ namespace IntellipenImport.Application.Processing;
 internal sealed class CanonicalReader(CsvTable table, SourceSchema schema)
 {
     private readonly Dictionary<string, int> _index = new(StringComparer.OrdinalIgnoreCase);
-    private readonly HashSet<string> _masked = new(schema.File.MaskedColumns, StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, Sensitivity> _sensitive = Masking.Columns(schema);
 
     public string Get(CsvRow row, string column)
     {
@@ -22,9 +22,10 @@ internal sealed class CanonicalReader(CsvTable table, SourceSchema schema)
     /// <summary>The value as it may be shown: masked for sensitive columns.</summary>
     public string Shown(CsvRow row, string column)
     {
-        var v = Get(row, column);
-        return _masked.Contains(column) ? Values.MaskNi(v) : v;
+        return Mask(column, Get(row, column));
     }
+
+    private string Mask(string column, string value) => _sensitive.TryGetValue(column.Trim(), out var s) ? Masking.Value(s, value) : value;
 
     /// <summary>The source column a canonical field comes from (what the user sees in their file).</summary>
     public string ColumnOf(string field) => schema.Fields.TryGetValue(field, out var m) ? m.Column : field;
@@ -54,9 +55,7 @@ internal sealed class CanonicalReader(CsvTable table, SourceSchema schema)
         {
             if (notes.Count == 0 || issues.Any(i => i.Field == column) || corrections.Any(c => c.Column == column)) return; // a column read twice (a split name) is noted once
             var before = Raw(row, column);
-            var mask = _masked.Contains(column);
-            corrections.Add(new Correction(row.LineNumber, key, column, mask ? Values.MaskNi(before) : before, mask ? Values.MaskNi(after) : after,
-                string.Join("; ", notes)));
+            corrections.Add(new Correction(row.LineNumber, key, column, Mask(column, before), Mask(column, after), string.Join("; ", notes)));
         }
         static List<string> Spaces(string raw) => raw != raw.Trim() ? ["Leading or trailing spaces removed"] : [];
 

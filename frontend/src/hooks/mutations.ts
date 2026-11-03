@@ -2,7 +2,7 @@ import { useCallback, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ApiError } from '../services/http';
 import { importsService } from '../services/importsService';
-import type { BatchSummary } from '../services/types';
+import type { BatchScope, BatchSummary, MemberRow } from '../services/types';
 import { queryKeys } from './queryKeys';
 
 export type UploadPhase = 'idle' | 'uploading' | 'processing';
@@ -77,6 +77,16 @@ export const useAcknowledge = (id: string) =>
   useCheckMutation<{ issueIds: number[]; note: string }>(id, ({ issueIds, note }) => importsService.acknowledge(id, issueIds, note));
 
 export const useUnacknowledge = (id: string) => useCheckMutation<number>(id, (issueId) => importsService.unacknowledge(id, issueId));
+
+/**
+ * Fetch one member's real values. A mutation, not a query, so the values never enter the shared cache:
+ * they live only in this hook's state, which the component clears after a minute or when the member changes.
+ */
+export const useRevealMember = (scope: BatchScope, batchId: string) =>
+  useMutation<MemberRow, ApiError, number>({
+    mutationFn: (lineNumber) => importsService.reveal(scope, batchId, lineNumber).catch((e) => Promise.reject(ApiError.from(e))),
+    gcTime: 0,
+  });
 
 export function useDiscardBatch(id: string, onDiscarded: () => void) {
   const client = useQueryClient();

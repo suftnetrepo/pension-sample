@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Text.Json;
 using IntellipenImport.Application.Abstractions;
 using IntellipenImport.Domain.Batches;
+using IntellipenImport.Domain.Canonical;
 using IntellipenImport.Domain.Processing;
 
 namespace IntellipenImport.Infrastructure.Persistence;
@@ -70,14 +71,15 @@ public sealed class SqlBatchRepository(IDbConnectionFactory connections) : IBatc
             ("committed_by", s.CommittedBy), ("committed_at_utc", Iso(s.CommittedAtUtc)),
             ("lines_read", r.LinesRead), ("accepted", r.Accepted), ("rejected", r.Rejected), ("warnings", r.WarningCount), ("balanced", r.Balanced ? 1 : 0),
             ("output_file_name", s.OutputFileName), ("output_file_sha256", s.OutputFileSha256), ("report_html", reportHtml),
-            ("output_file", outputFile), ("summary_json", JsonSerializer.Serialize(s.Figures, Json)));
+            ("output_file", outputFile), ("summary_json", JsonSerializer.Serialize(s.Figures, Json)),
+            ("output_file_masked", CommittedSnapshot.MaskedFileText(batch)));
 
         // One prepared command per table, re-used for every row: fast for tens of thousands of records.
-        await using (var insert = Prepare(db, tx, SqliteSql.InsertRecord, "id", "line_number", "record_index", "member_id", "record_type", "fields_json"))
+        await using (var insert = Prepare(db, tx, SqliteSql.InsertRecord, "id", "line_number", "record_index", "member_id", "record_type", "fields_json", "search_text"))
         {
             foreach (var m in r.Members.Where(m => m.Accepted))
                 for (var i = 0; i < m.Records.Count; i++)
-                    await Run(insert, ct, batch.Id, m.LineNumber, i, m.Key, m.Records[i].Type, JsonSerializer.Serialize(m.Records[i].Fields, Json));
+                    await Run(insert, ct, batch.Id, m.LineNumber, i, m.Key, m.Records[i].Type, JsonSerializer.Serialize(m.Records[i].Fields, Json), SearchText(m.Key, m.Records[i]));
         }
         await using (var insert = Prepare(db, tx, SqliteSql.InsertIssue, "id", "seq", "severity", "line_number", "member_id", "field", "value", "rule", "action", "owner",
                    "acknowledged_by", "acknowledged_at_utc", "acknowledgement_note"))
@@ -162,6 +164,29 @@ public sealed class SqlBatchRepository(IDbConnectionFactory connections) : IBatc
         var byLine = records.ToLookup(x => x.Line, x => x.Record);
         return new Page<CommittedMember>(heads.Select(h => new CommittedMember(h.Line, h.Key, h.Warn, byLine[h.Line].ToList())).ToList(), total);
     }
+
+    public async Task<CommittedMember?> MemberAsync(string id, int lineNumber, CancellationToken ct)
+    {
+        await using var db = await OpenAsync(ct);
+        var heads = await Query(db, SqliteSql.MemberHead, ct, r => (Line: r.GetInt32(0), Key: r.GetString(1), Warn: r.GetInt32(2) == 1), ("id", id), ("line", lineNumber));
+        if (heads.Count == 0) return null;
+        var records = await Query(db, SqliteSql.MemberRecords, ct, r => new TargetRecord
+            {
+                Type = r.GetString(1),
+                Fields = JsonSerializer.Deserialize<List<TargetField>>(r.GetString(2), Json) ?? [],
+            }, ("id", id), ("first", lineNumber), ("last", lineNumber));
+        return new CommittedMember(heads[0].Line, heads[0].Key, heads[0].Warn, records);
+    }
+
+    public async Task<string?> MaskedOutputFileAsync(string id, CancellationToken ct)
+    {
+        await using var db = await OpenAsync(ct);
+        return await Scalar(db, SqliteSql.OutputFileMasked, ct, ("id", id)) as string;
+    }
+
+    /// <summary>What member search can match: the member ID and this record's values that aren't sensitive. A record from before masking carries no sensitivity, so it adds nothing.</summary>
+    private static string SearchText(string key, TargetRecord record) =>
+        string.Join('\n', record.Fields.Where(f => f.Sensitivity == Sensitivity.None).Select(f => f.Value).Prepend(key));
 
     public async Task<IReadOnlyList<ImportIssue>> IssuesAsync(string id, CancellationToken ct)
     {

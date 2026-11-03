@@ -123,6 +123,7 @@ public static class ImportPipeline
 
         var (lines, fileName, trailerOk) = IntellipenWriter.File(records, mapping, schema.Scheme, context);
         result.OutputLines = lines;
+        result.MaskedOutputLines = IntellipenWriter.MaskedLines(lines, records, mapping);
         result.OutputFileName = fileName;
         result.TrailerOk = trailerOk;
         result.Balanced = result.Reconciliation.All(r => r.Difference == 0m) && result.RecordChecks.All(c => c.Ok) && trailerOk;

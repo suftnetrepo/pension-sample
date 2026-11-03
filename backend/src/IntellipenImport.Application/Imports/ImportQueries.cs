@@ -1,12 +1,13 @@
 using IntellipenImport.Application.Abstractions;
 using IntellipenImport.Application.Processing;
 using IntellipenImport.Application.Reporting;
+using IntellipenImport.Domain.Batches;
 using IntellipenImport.Domain.Processing;
 
 namespace IntellipenImport.Application.Imports;
 
 /// <summary>Everything the review screens read. Nothing here changes a batch (except marking an overdue one expired).</summary>
-public sealed class ImportQueries(ISourceSchemaCatalog schemas, BatchAccess access)
+public sealed class ImportQueries(ISourceSchemaCatalog schemas, BatchAccess access, ICurrentUser user, IAuditLog audit)
 {
     public IReadOnlyList<SourceDto> Sources() =>
         schemas.All
@@ -24,12 +25,15 @@ public sealed class ImportQueries(ISourceSchemaCatalog schemas, BatchAccess acce
         return access.Summary(record, await access.HeldOrExpireAsync(record, ct));
     }
 
+    /// <summary>Members as transformed, always masked. Search looks at the member ID and non-sensitive columns only, so it can't be used to probe NI numbers, birth dates or salaries.</summary>
     public async Task<PagedDto<MemberRowDto>> RowsAsync(string id, int page, int pageSize, string? search, string? show, CancellationToken ct)
     {
         var (_, batch) = await access.RequireHeldAsync(id, ct);
         pageSize = Math.Clamp(pageSize, 1, 200);
         page = Math.Max(1, page);
         var headers = batch.Result.SourceHeaders;
+        var schema = schemas.Find(batch.Source, batch.SchemaVersion);
+        var sensitive = schema is null ? null : Masking.Columns(schema);
 
         IEnumerable<MemberResult> members = (show ?? "accepted").ToLowerInvariant() switch
         {
@@ -41,15 +45,30 @@ public sealed class ImportQueries(ISourceSchemaCatalog schemas, BatchAccess acce
         if (!string.IsNullOrWhiteSpace(search))
         {
             var s = search.Trim();
-            members = members.Where(m => m.Key.Contains(s, StringComparison.OrdinalIgnoreCase) || m.SourceValues.Any(v => v.Contains(s, StringComparison.OrdinalIgnoreCase)));
+            members = members.Where(m => m.Key.Contains(s, StringComparison.OrdinalIgnoreCase)
+                || (sensitive is not null && m.SourceValues.Where((_, i) => i < headers.Count && !sensitive.ContainsKey(headers[i].Trim()))
+                    .Any(v => v.Contains(s, StringComparison.OrdinalIgnoreCase))));
         }
         var list = members.ToList();
-        var items = list.Skip((page - 1) * pageSize).Take(pageSize).Select(m => new MemberRowDto(
-            m.LineNumber, m.Key, m.Accepted, m.HasWarnings,
-            headers.Select((h, i) => new SourceValueDto(h, i < m.SourceValues.Count ? m.SourceValues[i] : string.Empty)).ToList(),
-            m.Records)).ToList();
+        var items = list.Skip((page - 1) * pageSize).Take(pageSize).Select(m => Row(m, headers, schema, reveal: false)).ToList();
         return new PagedDto<MemberRowDto>(items, page, pageSize, list.Count);
     }
+
+    /// <summary>One member's real values. Needs Import.RevealSensitive (or Import.Committer); every reveal is audited with the batch, line and user, never the values.</summary>
+    public async Task<MemberRowDto> RevealAsync(string id, int lineNumber, CancellationToken ct)
+    {
+        if (!user.CanReveal) throw new ImportProblem(ProblemKind.Forbidden, "Not allowed", "Showing the full values needs the Import.RevealSensitive role.");
+        var (_, batch) = await access.RequireHeldAsync(id, ct);
+        var member = batch.Result.Members.FirstOrDefault(m => m.LineNumber == lineNumber)
+            ?? throw new ImportProblem(ProblemKind.NotFound, "Line not found", $"Batch {id} has no line {lineNumber}.");
+        audit.Record("member-revealed", id, user.UserId, $"line {lineNumber}");
+        return Row(member, batch.Result.SourceHeaders, schemas.Find(batch.Source, batch.SchemaVersion), reveal: true);
+    }
+
+    private static MemberRowDto Row(MemberResult m, IReadOnlyList<string> headers, Domain.Schemas.SourceSchema? schema, bool reveal) => new(
+        m.LineNumber, m.Key, m.Accepted, m.HasWarnings,
+        Masking.Source(headers, m.SourceValues, schema, reveal).Select(v => new SourceValueDto(v.Column, v.Value)).ToList(),
+        reveal ? m.Records : Masking.Records(m.Records, null));
 
     public async Task<IReadOnlyList<IssueDto>> IssuesAsync(string id, CancellationToken ct)
     {
@@ -71,12 +90,14 @@ public sealed class ImportQueries(ISourceSchemaCatalog schemas, BatchAccess acce
     {
         var (_, batch) = await access.RequireHeldAsync(id, ct);
         var all = batch.Result.OutputLines;
-        return new FilePreviewDto(batch.Result.OutputFileName, all.Count, all.Take(Math.Clamp(lines, 1, 500)).ToList());
+        var masked = batch.Result.MaskedOutputLines; // never the delivered lines: the preview is always masked
+        return new FilePreviewDto(batch.Result.OutputFileName, all.Count, masked.Take(Math.Clamp(lines, 1, 500)).ToList());
     }
 
     public async Task<DownloadDto> FileAsync(string id, CancellationToken ct)
     {
         var (_, batch) = await access.RequireHeldAsync(id, ct);
+        audit.Record("file-downloaded", id, user.UserId, batch.Result.OutputFileName);
         return new DownloadDto(batch.Result.OutputFileName, "text/csv", ImportCommands.FileBytes(batch));
     }
 

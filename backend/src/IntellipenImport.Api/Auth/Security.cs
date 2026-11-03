@@ -12,6 +12,8 @@ public static class Roles
     public const string Committer = "Import.Committer";
     /// <summary>Read-only: may view and export committed batches, nothing else.</summary>
     public const string Viewer = "Import.Viewer";
+    /// <summary>May ask to see one member's unmasked NI number, date of birth and salaries. Committers may too.</summary>
+    public const string RevealSensitive = "Import.RevealSensitive";
 }
 
 public static class Policies
@@ -22,6 +24,10 @@ public static class Policies
     public const string Commit = "Import.Commit";
     /// <summary>View and export committed batches (read-only).</summary>
     public const string View = "Import.View";
+    /// <summary>Show one member's unmasked values (audited).</summary>
+    public const string Reveal = "Import.Reveal";
+    /// <summary>Download the complete IntelliPen file. Today the same people as Commit; named separately so the two can diverge.</summary>
+    public const string DownloadFile = "Import.DownloadFile";
 }
 
 /// <summary>The signed-in user, from the request's claims.</summary>
@@ -33,6 +39,8 @@ public sealed class HttpCurrentUser(IHttpContextAccessor accessor) : ICurrentUse
         User.FindFirstValue("preferred_username") ?? User.FindFirstValue(ClaimTypes.Name) ?? User.Identity?.Name ?? "unknown";
 
     public bool IsCommitter => User.IsInRole(Roles.Committer);
+
+    public bool CanReveal => IsCommitter || User.IsInRole(Roles.RevealSensitive);
 }
 
 /// <summary>

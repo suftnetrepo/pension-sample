@@ -38,7 +38,7 @@ public class CorrectionTests
     public void A_pound_sign_and_thousands_separator_are_removed_from_a_salary()
     {
         var c = Only(Line(GoodLine.Replace("50000", "\"£50,000\"", StringComparison.Ordinal)));
-        Assert.Equal(("Salary Y-1", "£50,000", "50000"), (c.Column, c.Before, c.After));
+        Assert.Equal(("Salary Y-1", "****", "****"), (c.Column, c.Before, c.After)); // salaries are masked; the description says what was done
         Assert.Contains("£ sign removed", c.Description);
         Assert.Contains("Thousands separator removed", c.Description);
     }
@@ -64,7 +64,8 @@ public class CorrectionTests
     {
         var r = Line(GoodLine.Replace("01/02/1967", "1/2/1967", StringComparison.Ordinal));
         var c = Only(r);
-        Assert.Equal(("Date of birth", "1/2/1967", "01/02/1967"), (c.Column, c.Before, c.After));
+        Assert.Equal(("Date of birth", "**/**/1967", "**/**/1967"), (c.Column, c.Before, c.After));
+        Assert.Contains("one digit", c.Description);
         Assert.Equal(1, r.Accepted);
         Assert.Equal(Run(WithLines(GoodLine)).OutputLines.Skip(1), r.OutputLines.Skip(1)); // same 1 February 1967, same output
     }
@@ -115,7 +116,7 @@ public class CorrectionTests
     {
         var ashwood = Run(Sample("ashwood-payroll_v1_sample.csv"));
         Assert.Equal((31, 26, 5, 10), (ashwood.LinesRead, ashwood.Accepted, ashwood.Rejected, ashwood.WarningCount));
-        Assert.Contains(ashwood.Corrections, c => c.Key == "DB006" && c.Before == "£52,000" && c.After == "52000");
+        Assert.Contains(ashwood.Corrections, c => c.Key == "DB006" && c.Column == "Salary Y-1" && c.Description.Contains("£ sign removed"));
 
         var legacy = Run(Sample("legacy-admin_v1_sample.csv"), Legacy);
         Assert.Equal((30, 25, 5, 10), (legacy.LinesRead, legacy.Accepted, legacy.Rejected, legacy.WarningCount));

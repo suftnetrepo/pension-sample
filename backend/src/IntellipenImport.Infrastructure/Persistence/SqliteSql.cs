@@ -29,7 +29,8 @@ internal static class SqliteSql
             output_file_sha256  TEXT    NOT NULL,
             report_html         TEXT    NOT NULL,
             output_file         TEXT    NOT NULL DEFAULT '',
-            summary_json        TEXT    NOT NULL DEFAULT ''
+            summary_json        TEXT    NOT NULL DEFAULT '',
+            output_file_masked  TEXT    NOT NULL DEFAULT ''
         );
         CREATE INDEX IF NOT EXISTS ix_import_batch_committed ON import_batch (committed_at_utc DESC);
 
@@ -40,6 +41,7 @@ internal static class SqliteSql
             member_id     TEXT    NOT NULL,
             record_type   TEXT    NOT NULL,
             fields_json   TEXT    NOT NULL,
+            search_text   TEXT    NOT NULL DEFAULT '',
             PRIMARY KEY (batch_id, line_number, record_index)
         );
 
@@ -89,6 +91,8 @@ internal static class SqliteSql
     [
         ("import_batch", "output_file", "ALTER TABLE import_batch ADD COLUMN output_file TEXT NOT NULL DEFAULT '';"),
         ("import_batch", "summary_json", "ALTER TABLE import_batch ADD COLUMN summary_json TEXT NOT NULL DEFAULT '';"),
+        ("import_batch", "output_file_masked", "ALTER TABLE import_batch ADD COLUMN output_file_masked TEXT NOT NULL DEFAULT '';"),
+        ("import_member_record", "search_text", "ALTER TABLE import_member_record ADD COLUMN search_text TEXT NOT NULL DEFAULT '';"),
         ("import_issue", "owner", "ALTER TABLE import_issue ADD COLUMN owner TEXT NOT NULL DEFAULT '';"),
         ("import_issue", "acknowledged_by", "ALTER TABLE import_issue ADD COLUMN acknowledged_by TEXT NULL;"),
         ("import_issue", "acknowledged_at_utc", "ALTER TABLE import_issue ADD COLUMN acknowledged_at_utc TEXT NULL;"),
@@ -108,15 +112,15 @@ internal static class SqliteSql
     public const string InsertBatch = """
         INSERT INTO import_batch (id, source, source_name, schema_version, mapping_name, mapping_version, file_name, file_sha256,
             uploaded_by, uploaded_at_utc, committed_by, committed_at_utc, lines_read, accepted, rejected, warnings, balanced,
-            output_file_name, output_file_sha256, report_html, output_file, summary_json)
+            output_file_name, output_file_sha256, report_html, output_file, summary_json, output_file_masked)
         VALUES ($id, $source, $source_name, $schema_version, $mapping_name, $mapping_version, $file_name, $file_sha256,
             $uploaded_by, $uploaded_at_utc, $committed_by, $committed_at_utc, $lines_read, $accepted, $rejected, $warnings, $balanced,
-            $output_file_name, $output_file_sha256, $report_html, $output_file, $summary_json);
+            $output_file_name, $output_file_sha256, $report_html, $output_file, $summary_json, $output_file_masked);
         """;
 
     public const string InsertRecord = """
-        INSERT INTO import_member_record (batch_id, line_number, record_index, member_id, record_type, fields_json)
-        VALUES ($id, $line_number, $record_index, $member_id, $record_type, $fields_json);
+        INSERT INTO import_member_record (batch_id, line_number, record_index, member_id, record_type, fields_json, search_text)
+        VALUES ($id, $line_number, $record_index, $member_id, $record_type, $fields_json, $search_text);
         """;
 
     public const string InsertIssue = """
@@ -162,12 +166,12 @@ internal static class SqliteSql
         FROM import_batch WHERE id = $id;
         """;
 
-    /// <summary>One row per member (its first record); filters on warnings and on member ID or any field value.</summary>
+    /// <summary>One row per member (its first record); filters on warnings and on member ID or any non-sensitive field value (search_text never holds NI numbers, birth dates or salaries).</summary>
     private const string MemberWhere = """
         WHERE r.batch_id = $id AND r.record_index = 0
           AND ($warnings_only = 0 OR EXISTS (SELECT 1 FROM import_issue i WHERE i.batch_id = r.batch_id AND i.line_number = r.line_number AND i.severity = 'Warning'))
           AND ($search = '' OR r.member_id LIKE $like ESCAPE '\'
-               OR EXISTS (SELECT 1 FROM import_member_record x WHERE x.batch_id = r.batch_id AND x.line_number = r.line_number AND x.fields_json LIKE $like ESCAPE '\'))
+               OR EXISTS (SELECT 1 FROM import_member_record x WHERE x.batch_id = r.batch_id AND x.line_number = r.line_number AND x.search_text LIKE $like ESCAPE '\'))
         """;
 
     public const string MemberCount = "SELECT COUNT(*) FROM import_member_record r\n" + MemberWhere + ";";
@@ -179,6 +183,13 @@ internal static class SqliteSql
         """ + "\n" + MemberWhere + "\n" + """
         ORDER BY r.line_number
         LIMIT $take OFFSET $skip;
+        """;
+
+    public const string MemberHead = """
+        SELECT r.line_number, r.member_id,
+               EXISTS (SELECT 1 FROM import_issue i WHERE i.batch_id = r.batch_id AND i.line_number = r.line_number AND i.severity = 'Warning')
+        FROM import_member_record r
+        WHERE r.batch_id = $id AND r.record_index = 0 AND r.line_number = $line;
         """;
 
     public const string MemberRecords = """
@@ -204,6 +215,8 @@ internal static class SqliteSql
         """;
 
     public const string Report = "SELECT report_html FROM import_batch WHERE id = $id;";
+
+    public const string OutputFileMasked = "SELECT output_file_masked FROM import_batch WHERE id = $id;";
 
     public const string OutputFile = "SELECT output_file FROM import_batch WHERE id = $id;";
 }
