@@ -57,6 +57,27 @@ export function useCommitBatch(id: string) {
   });
 }
 
+/**
+ * Check warnings, or take a check back. The returned summary replaces the cached one (so the commit bar updates at once)
+ * and this batch's exceptions are reloaded to show who checked what. A 410 refreshes the batch, as for commit.
+ */
+function useCheckMutation<TVars>(id: string, call: (vars: TVars) => Promise<BatchSummary>) {
+  const client = useQueryClient();
+  return useMutation<BatchSummary, ApiError, TVars>({
+    mutationFn: (vars) => call(vars).catch((e) => Promise.reject(ApiError.from(e))),
+    onSuccess: (batch) => {
+      client.setQueryData(queryKeys.batch(id), batch);
+      void client.invalidateQueries({ queryKey: queryKeys.exceptions('held', id) });
+    },
+    onError: (e) => e.isGone && client.invalidateQueries({ queryKey: queryKeys.batch(id), exact: true }),
+  });
+}
+
+export const useAcknowledge = (id: string) =>
+  useCheckMutation<{ issueIds: number[]; note: string }>(id, ({ issueIds, note }) => importsService.acknowledge(id, issueIds, note));
+
+export const useUnacknowledge = (id: string) => useCheckMutation<number>(id, (issueId) => importsService.unacknowledge(id, issueId));
+
 export function useDiscardBatch(id: string, onDiscarded: () => void) {
   const client = useQueryClient();
   return useMutation<void, ApiError>({
@@ -94,6 +115,7 @@ export function useAction<TArgs extends unknown[]>(action: (...args: TArgs) => P
 
 // Each takes (scope, batchId): the same buttons work for a held batch and a committed one.
 export const useDownloadExceptions = () => useAction(importsService.downloadExceptions);
+export const useDownloadCorrections = () => useAction(importsService.downloadCorrections);
 export const useDownloadFile = () => useAction(importsService.downloadFile);
 export const useDownloadReport = () => useAction(importsService.downloadReport);
 export const useOpenReport = () => useAction(importsService.openReport);

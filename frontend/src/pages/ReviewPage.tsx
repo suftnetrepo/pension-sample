@@ -3,9 +3,11 @@ import { formatDateTime } from '@/services/format';
 import { Pill } from '@/components/common/Feedback';
 import { BatchTiles } from '@/components/review/BatchTiles';
 import { BatchTabs } from '@/components/review/BatchTabs';
+import { useReviewView } from '@/components/review/useReviewView';
 import { CommitBar } from '@/components/review/CommitBar';
 
 export function ReviewPage({ batch, onDiscarded }: { batch: BatchSummary; onDiscarded: () => void }) {
+  const view = useReviewView();
   return (
     <section className="grid grid-cols-1 gap-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -18,8 +20,8 @@ export function ReviewPage({ batch, onDiscarded }: { batch: BatchSummary; onDisc
         <Pill tone={batch.balanced ? 'ok' : 'error'}>{batch.balanced ? 'Reconciliation balanced' : 'Reconciliation NOT balanced'}</Pill>
       </div>
       <BatchTiles counts={batch.counts!} />
-      <BatchTabs scope="held" batch={batch} />
-      <CommitBar batch={batch} onDiscarded={onDiscarded} />
+      <BatchTabs scope="held" batch={batch} view={view} />
+      <CommitBar batch={batch} onDiscarded={onDiscarded} onShowUnchecked={view.showUnchecked} />
     </section>
   );
 }

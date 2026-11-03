@@ -20,7 +20,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 
 /** "I have reviewed" + Commit / Discard. Commit stays disabled until the box is ticked and the API says it may commit. */
-export function CommitBar({ batch, onDiscarded }: { batch: BatchSummary; onDiscarded: () => void }) {
+export function CommitBar({ batch, onDiscarded, onShowUnchecked }: { batch: BatchSummary; onDiscarded: () => void; onShowUnchecked: () => void }) {
   const [reviewed, setReviewed] = useState(false);
   const commit = useCommitBatch(batch.id);
   const discard = useDiscardBatch(batch.id, onDiscarded);
@@ -31,9 +31,11 @@ export function CommitBar({ batch, onDiscarded }: { batch: BatchSummary; onDisca
     ? 'The reconciliation does not balance, so this batch cannot be committed.'
     : counts.accepted === 0
       ? 'Every line was rejected. Correct the file and upload it again.'
-      : !batch.canCommit
-        ? 'You can review this batch, but committing needs the Import.Committer role.'
-        : null;
+      : batch.warningsPending > 0
+        ? `${formatNumber(batch.warningsPending)} ${batch.warningsPending === 1 ? 'warning' : 'warnings'} still to check`
+        : !batch.canCommit
+          ? 'You can review this batch, but committing needs the Import.Committer role.'
+          : null;
   const error = commit.error ?? discard.error;
 
   return (
@@ -56,7 +58,12 @@ export function CommitBar({ batch, onDiscarded }: { batch: BatchSummary; onDisca
                 I have reviewed the transformed data, exceptions and reconciliation
               </Label>
             </div>
-            <span className="text-muted-foreground text-xs">
+            <span className="text-muted-foreground flex flex-wrap items-center gap-2 text-xs">
+              {batch.warningsPending > 0 && batch.balanced && counts.accepted > 0 && (
+                <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={onShowUnchecked}>
+                  Show unchecked warnings
+                </Button>
+              )}
               {blocked ??
                 `${formatNumber(counts.accepted)} members will be saved and written to the IntelliPen file. ` +
                   `${formatNumber(counts.rejected)} rejected lines are listed in the reconciliation report, not loaded.`}

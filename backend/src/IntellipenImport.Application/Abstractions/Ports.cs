@@ -48,6 +48,9 @@ public interface ICommittedBatchReader
     Task<CommittedSnapshot?> FindAsync(string id, CancellationToken ct);
     Task<Page<CommittedMember>> MembersAsync(string id, string? search, bool warningsOnly, int page, int pageSize, CancellationToken ct);
     Task<IReadOnlyList<ImportIssue>> IssuesAsync(string id, CancellationToken ct);
+    /// <summary>Who checked which warning (by issue id).</summary>
+    Task<IReadOnlyList<Acknowledgement>> AcknowledgementsAsync(string id, CancellationToken ct);
+    Task<IReadOnlyList<Correction>> CorrectionsAsync(string id, CancellationToken ct);
     Task<string?> ReportAsync(string id, CancellationToken ct);
     Task<string?> OutputFileAsync(string id, CancellationToken ct);
 }

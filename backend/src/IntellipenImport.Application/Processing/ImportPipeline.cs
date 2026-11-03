@@ -51,24 +51,25 @@ public static class ImportPipeline
             var key = reader.KeyOf(row);
             var member = new MemberResult { LineNumber = row.LineNumber, Key = key, SourceValues = row.Values.ToList() };
             var issues = new List<ImportIssue>();
+            var corrections = new List<Correction>();
             var person = new CanonicalMember();
 
             if (row.Values.Count != table.Headers.Count)
             {
                 var issue = reader.Issue(row, key, "(whole line)", $"Must have {table.Headers.Count} values, one per column heading",
-                    "Check for a missing or extra delimiter on this line");
+                    "Ask payroll to fix the missing or extra delimiter on this line and send a corrected file", IssueOwner.Payroll);
                 issue.Value = $"{row.Values.Count} values";
                 issues.Add(issue);
             }
             else
             {
-                person = reader.Read(row, issues);
+                person = reader.Read(row, issues, corrections);
                 if (key.Length > 0 && keys[key] > 1)
                 {
                     var others = table.Rows.Where(r => r.LineNumber != row.LineNumber && string.Equals(reader.KeyOf(r), key, StringComparison.OrdinalIgnoreCase))
                         .Select(r => r.LineNumber);
                     issues.Add(reader.Issue(row, key, reader.ColumnOf(CanonicalFields.MemberId),
-                        "Must appear only once (also on line " + string.Join(", ", others) + ")", "Remove the duplicate line, or correct the member ID"));
+                        "Must appear only once (also on line " + string.Join(", ", others) + ")", "Ask payroll to remove the duplicate line or correct the member ID and send a corrected file", IssueOwner.Payroll));
                 }
                 var failedColumns = issues.Select(i => i.Field).ToHashSet(StringComparer.OrdinalIgnoreCase);
                 MemberRules.Check(person, row, key, reader, failedColumns, issues);
@@ -77,7 +78,14 @@ public static class ImportPipeline
             member.Accepted = issues.All(i => i.Severity != Severity.Error);
             member.HasWarnings = issues.Any(i => i.Severity == Severity.Warning);
             if (member.Accepted) member.Records = IntellipenWriter.Records(person, mapping);
-            result.Issues.AddRange(issues.OrderBy(i => i.Severity));
+            foreach (var i in issues.OrderBy(i => i.Severity))
+            {
+                i.Id = result.Issues.Count;
+                result.Issues.Add(i);
+            }
+            // A value that ended up in error was not accepted, so nothing was "corrected" there.
+            var errorColumns = issues.Where(i => i.Severity == Severity.Error).Select(i => i.Field).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            result.Corrections.AddRange(corrections.Where(c => !errorColumns.Contains(c.Column)));
             result.Members.Add(member);
             canonical.Add(person);
         }

@@ -11,7 +11,7 @@ public sealed record SourceDto(string Source, string Name, string Scheme, IReadO
 
 public sealed record MappingDto(string Name, string Version, string Description);
 
-public sealed record CountsDto(int LinesRead, int Accepted, int Rejected, int Errors, int Warnings, int LinesWithWarnings);
+public sealed record CountsDto(int LinesRead, int Accepted, int Rejected, int Errors, int Warnings, int LinesWithWarnings, int WarningsChecked, int Corrections);
 
 public sealed record ReconciliationDto(string Measure, bool IsMoney, decimal Source, decimal Transformed, decimal Rejected, decimal Difference);
 
@@ -34,6 +34,7 @@ public sealed record BatchSummaryDto(
     IReadOnlyList<RecordCheckDto> RecordChecks,
     bool TrailerOk,
     bool Balanced,
+    int WarningsPending,
     bool CanCommit,
     string? ClosedBy,
     DateTimeOffset? ClosedAtUtc,
@@ -45,7 +46,13 @@ public sealed record MemberRowDto(int LineNumber, string Key, bool Accepted, boo
 
 public sealed record PagedDto<T>(IReadOnlyList<T> Items, int Page, int PageSize, int Total);
 
-public sealed record IssueDto(string Severity, int LineNumber, string Key, string Field, string Value, string Rule, string Action);
+/// <summary>Who checked a warning, and when. Null on an issue that is an error or hasn't been checked.</summary>
+public sealed record AcknowledgementDto(string By, DateTimeOffset AtUtc, string? Note);
+
+public sealed record IssueDto(int Id, string Severity, int LineNumber, string Key, string Field, string Value, string Rule, string Action, string Owner,
+    AcknowledgementDto? Checked);
+
+public sealed record CorrectionDto(int LineNumber, string Key, string Column, string Before, string After, string Description);
 
 public sealed record FilePreviewDto(string FileName, int TotalLines, IReadOnlyList<string> Lines);
 

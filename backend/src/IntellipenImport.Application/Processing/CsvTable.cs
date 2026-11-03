@@ -1,7 +1,8 @@
 namespace IntellipenImport.Application.Processing;
 
 /// <summary>One data line of the uploaded file. <see cref="LineNumber"/> is the physical line it starts on (headings = line 1).</summary>
-public sealed record CsvRow(int LineNumber, IReadOnlyList<string> Values);
+/// <param name="Untrimmed">The same values with unquoted ones as written (spaces kept), so a tidy-up can be reported.</param>
+public sealed record CsvRow(int LineNumber, IReadOnlyList<string> Values, IReadOnlyList<string>? Untrimmed = null);
 
 /// <summary>The uploaded file as headings plus data lines. Fully blank lines are skipped.</summary>
 public sealed class CsvTable

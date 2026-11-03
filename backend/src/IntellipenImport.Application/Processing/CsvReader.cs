@@ -13,8 +13,9 @@ public static class CsvReader
         ArgumentNullException.ThrowIfNull(text);
         if (text.Length > 0 && text[0] == '﻿') text = text[1..];
 
-        var records = new List<(int Line, List<string> Values)>();
+        var records = new List<(int Line, List<string> Values, List<string> Untrimmed)>();
         var values = new List<string>();
+        var untrimmed = new List<string>();
         var field = new StringBuilder();
         var inQuotes = false;
         var fieldWasQuoted = false;
@@ -24,6 +25,7 @@ public static class CsvReader
         void EndField()
         {
             values.Add(fieldWasQuoted ? field.ToString() : field.ToString().Trim());
+            untrimmed.Add(field.ToString());
             field.Clear();
             fieldWasQuoted = false;
         }
@@ -32,8 +34,9 @@ public static class CsvReader
         {
             EndField();
             var blank = values.Count == 1 && values[0].Length == 0;
-            if (!blank) records.Add((recordStartLine, values));
+            if (!blank) records.Add((recordStartLine, values, untrimmed));
             values = [];
+            untrimmed = [];
         }
 
         for (var i = 0; i < text.Length; i++)
@@ -82,7 +85,7 @@ public static class CsvReader
 
         if (records.Count == 0) return new CsvTable([], []);
         var headers = records[0].Values;
-        var rows = records.Skip(1).Select(r => new CsvRow(r.Line, r.Values)).ToList();
+        var rows = records.Skip(1).Select(r => new CsvRow(r.Line, r.Values, r.Untrimmed)).ToList();
         return new CsvTable(headers, rows);
     }
 }

@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using IntellipenImport.Application.Abstractions;
@@ -22,8 +21,6 @@ public sealed class ImportCommands(
     TimeProvider clock,
     IAuditLog audit)
 {
-    private static readonly ConcurrentDictionary<string, SemaphoreSlim> Locks = new(StringComparer.OrdinalIgnoreCase);
-
     public async Task<BatchSummaryDto> UploadAsync(UploadCommand command, CancellationToken ct)
     {
         if (command.Length == 0) throw new ImportProblem(ProblemKind.Invalid, "No file", "Choose a CSV file to upload.");
@@ -84,20 +81,20 @@ public sealed class ImportCommands(
         if (!reviewed) throw new ImportProblem(ProblemKind.Invalid, "Not reviewed", "Tick \"I have reviewed\" before committing.");
         if (!user.IsCommitter) throw new ImportProblem(ProblemKind.Conflict, "Not allowed", "Committing needs the Import.Committer role.");
 
-        var gate = Locks.GetOrAdd(id, _ => new SemaphoreSlim(1, 1));
+        var gate = BatchLocks.For(id);
         await gate.WaitAsync(ct);
         try
         {
             var record = await access.RecordAsync(id, ct);
             if (record.Status == BatchStatus.Committed) return access.Summary(record, null); // a repeated click gets the same answer
             var (_, batch) = await access.RequireHeldAsync(id, ct);
-            Guard(batch.EnsureCommittable);
+            Guard(() => batch.EnsureCommittable(options.RequireWarningsAcknowledged));
 
             var now = clock.GetUtcNow();
             var fileText = FileText(batch);
             var content = Encoding.UTF8.GetBytes(fileText);
             var fileSha = Convert.ToHexStringLower(SHA256.HashData(content));
-            var report = ReconciliationReport.Build(Header(batch, "Committed", user.UserId, now, fileSha), batch.Result);
+            var report = ReconciliationReport.Build(Header(batch, "Committed", user.UserId, now, fileSha), batch.Result, batch.Acknowledgements);
             var outcome = new CommitOutcome
             {
                 MembersSaved = batch.Result.Accepted, RecordCounts = batch.Result.RecordCounts, RejectedLines = batch.Result.Rejected,
@@ -133,6 +130,56 @@ public sealed class ImportCommands(
         }
     }
 
+    /// <summary>Marks warnings as checked by the current user. All or nothing; checking one that is already checked changes nothing.</summary>
+    public async Task<BatchSummaryDto> AcknowledgeAsync(string id, IReadOnlyList<int> issueIds, string? note, CancellationToken ct)
+    {
+        if (issueIds.Count == 0) throw new ImportProblem(ProblemKind.Invalid, "Nothing to check", "Choose at least one warning.");
+        if (note is { Length: > 500 }) throw new ImportProblem(ProblemKind.Invalid, "Note too long", "Keep the note to 500 characters or fewer.");
+        var gate = BatchLocks.For(id);
+        await gate.WaitAsync(ct);
+        try
+        {
+            var (record, batch) = await access.RequireHeldAsync(id, ct);
+            var before = batch.Acknowledgements.Count;
+            Guard(() => batch.Acknowledge(record, issueIds, user.UserId, clock.GetUtcNow(), note), "Cannot check warnings");
+            if (batch.Acknowledgements.Count != before)
+            {
+                await store.SaveBatchAsync(batch, ct);
+                var ids = issueIds.Distinct().Order().ToList();
+                var rules = ids.Select(i => batch.Result.Issues[i].Rule).Distinct();
+                audit.Record("warnings-checked", id, user.UserId, $"issues {string.Join(",", ids)}; rules: {string.Join(" | ", rules)}");
+            }
+            return access.Summary(record, batch);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    /// <summary>Takes back a check, until the batch is committed.</summary>
+    public async Task<BatchSummaryDto> UnacknowledgeAsync(string id, int issueId, CancellationToken ct)
+    {
+        var gate = BatchLocks.For(id);
+        await gate.WaitAsync(ct);
+        try
+        {
+            var (record, batch) = await access.RequireHeldAsync(id, ct);
+            var before = batch.Acknowledgements.Count;
+            Guard(() => batch.Unacknowledge(record, issueId), "Cannot undo the check");
+            if (batch.Acknowledgements.Count != before)
+            {
+                await store.SaveBatchAsync(batch, ct);
+                audit.Record("warning-check-undone", id, user.UserId, $"issue {issueId}; rule: {batch.Result.Issues.ElementAtOrDefault(issueId)?.Rule}");
+            }
+            return access.Summary(record, batch);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
     public async Task DiscardAsync(string id, CancellationToken ct)
     {
         var record = await access.RecordAsync(id, ct);
@@ -160,9 +207,9 @@ public sealed class ImportCommands(
     }
 
     /// <summary>A broken domain rule becomes a 409 with the rule's own message.</summary>
-    private static void Guard(Action rule)
+    private static void Guard(Action rule, string title = "Cannot commit")
     {
         try { rule(); }
-        catch (BatchRuleException ex) { throw new ImportProblem(ProblemKind.Conflict, "Cannot commit", ex.Message); }
+        catch (BatchRuleException ex) { throw new ImportProblem(ProblemKind.Conflict, title, ex.Message); }
     }
 }

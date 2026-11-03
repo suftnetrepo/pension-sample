@@ -56,6 +56,14 @@ export function useBatchExceptions(scope: BatchScope, id: string) {
   });
 }
 
+export function useBatchCorrections(scope: BatchScope, id: string) {
+  return useQuery({
+    queryKey: queryKeys.corrections(scope, id),
+    queryFn: ({ signal }) => importsService.corrections(scope, id, signal),
+    staleTime: Infinity,
+  });
+}
+
 export function useFilePreview(scope: BatchScope, id: string, lines = 50) {
   return useQuery({
     queryKey: queryKeys.filePreview(scope, id, lines),

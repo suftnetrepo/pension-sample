@@ -1,5 +1,5 @@
 import { downloadFile, getJson, openHtml, request, sendJson, uploadWithProgress, type UploadHandle } from './http';
-import type { BatchScope, BatchSummary, CommittedItem, FilePreview, Issue, MemberRow, Paged, RowFilter, Source } from './types';
+import type { BatchScope, BatchSummary, CommittedItem, Correction, FilePreview, Issue, MemberRow, Paged, RowFilter, Source } from './types';
 
 /** Held batches live under /imports (review, commit, discard); committed ones under /committed (GET only). */
 const base = (scope: BatchScope, id: string) => `${scope === 'held' ? '/imports' : '/committed'}/${encodeURIComponent(id)}`;
@@ -28,10 +28,14 @@ export const importsService = {
 
   exceptions: (scope: BatchScope, id: string, signal?: AbortSignal) => getJson<Issue[]>(`${base(scope, id)}/exceptions`, signal),
 
+  corrections: (scope: BatchScope, id: string, signal?: AbortSignal) => getJson<Correction[]>(`${base(scope, id)}/corrections`, signal),
+
   filePreview: (scope: BatchScope, id: string, lines: number, signal?: AbortSignal) =>
     getJson<FilePreview>(`${base(scope, id)}/file?lines=${lines}`, signal),
 
   downloadExceptions: (scope: BatchScope, id: string) => downloadFile(`${base(scope, id)}/exceptions.csv`, `${id}_exceptions.csv`),
+
+  downloadCorrections: (scope: BatchScope, id: string) => downloadFile(`${base(scope, id)}/corrections.csv`, `${id}_corrections.csv`),
 
   downloadFile: (scope: BatchScope, id: string) => downloadFile(`${base(scope, id)}/file?download=true`, `${id}.csv`),
 
@@ -48,6 +52,13 @@ export const importsService = {
   // ---- Change a held batch ----
 
   commit: (id: string) => sendJson<BatchSummary>(`${base('held', id)}/commit`, 'POST', { reviewed: true }),
+
+  /** Mark warnings as checked by the signed-in user. Returns the updated summary. */
+  acknowledge: (id: string, issueIds: number[], note: string) =>
+    sendJson<BatchSummary>(`${base('held', id)}/acknowledgements`, 'POST', { issueIds, note: note.trim() || undefined }),
+
+  /** Take back one check. Returns the updated summary. */
+  unacknowledge: (id: string, issueId: number) => sendJson<BatchSummary>(`${base('held', id)}/acknowledgements/${issueId}`, 'DELETE'),
 
   discard: async (id: string) => {
     await request(base('held', id), { method: 'DELETE' });

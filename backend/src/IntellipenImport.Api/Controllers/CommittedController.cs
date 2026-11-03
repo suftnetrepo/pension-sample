@@ -34,6 +34,12 @@ public sealed class CommittedController(CommittedQueries queries) : ControllerBa
     [HttpGet("{id}/exceptions.csv")]
     public async Task<FileContentResult> ExceptionsCsv(string id, CancellationToken ct) => Download(await queries.IssuesCsvAsync(id, ct));
 
+    [HttpGet("{id}/corrections")]
+    public Task<IReadOnlyList<CorrectionDto>> Corrections(string id, CancellationToken ct) => queries.CorrectionsAsync(id, ct);
+
+    [HttpGet("{id}/corrections.csv")]
+    public async Task<FileContentResult> CorrectionsCsv(string id, CancellationToken ct) => Download(await queries.CorrectionsCsvAsync(id, ct));
+
     /// <summary>Preview of the IntelliPen file as delivered, or the whole file with download=true.</summary>
     [HttpGet("{id}/file")]
     public async Task<IActionResult> OutputFile(string id, [FromQuery] int lines = 50, [FromQuery] bool download = false, CancellationToken ct = default) =>

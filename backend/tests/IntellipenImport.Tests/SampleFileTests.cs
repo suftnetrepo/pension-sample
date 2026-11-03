@@ -68,7 +68,7 @@ public class SampleFileTests
     {
         var html = ReconciliationReport.Build(new ReportHeader("IMP-20261102-TEST01", "ReadyForReview", "legacy-admin_v1_sample.csv", "abc",
             "Legacy admin export", "v1", "IntelliPen member import", "0.1", "tester", new DateTimeOffset(2026, 11, 2, 21, 55, 0, TimeSpan.Zero),
-            null, null, null), Legacy);
+            null, null, null), Legacy, []);
         Assert.Contains("Legacy admin export v1", html);
         Assert.Contains("02/11/2026 21:55 UTC", html);
         Assert.DoesNotContain("AB123456C", html);

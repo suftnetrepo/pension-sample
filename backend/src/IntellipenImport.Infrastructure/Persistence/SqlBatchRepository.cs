@@ -33,18 +33,22 @@ public sealed class SqlBatchRepository(IDbConnectionFactory connections) : IBatc
             await cmd.ExecuteNonQueryAsync(ct);
         }
 
-        var columns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        await using (var cmd = db.CreateCommand())
+        foreach (var table in SqliteSql.AddedColumns.Select(c => c.Table).Distinct())
         {
-            cmd.CommandText = SqliteSql.BatchColumns;
-            await using var reader = await cmd.ExecuteReaderAsync(ct);
-            while (await reader.ReadAsync(ct)) columns.Add(reader.GetString(0));
-        }
-        foreach (var (column, sql) in SqliteSql.AddedColumns.Where(c => !columns.Contains(c.Column)))
-        {
-            await using var cmd = db.CreateCommand();
-            cmd.CommandText = sql;
-            await cmd.ExecuteNonQueryAsync(ct);
+            var columns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            await using (var cmd = db.CreateCommand())
+            {
+                cmd.CommandText = SqliteSql.TableColumns;
+                AddParameter(cmd, "table", table);
+                await using var reader = await cmd.ExecuteReaderAsync(ct);
+                while (await reader.ReadAsync(ct)) columns.Add(reader.GetString(0));
+            }
+            foreach (var (_, column, sql) in SqliteSql.AddedColumns.Where(c => c.Table == table && !columns.Contains(c.Column)))
+            {
+                await using var cmd = db.CreateCommand();
+                cmd.CommandText = sql;
+                await cmd.ExecuteNonQueryAsync(ct);
+            }
         }
     }
 
@@ -75,12 +79,24 @@ public sealed class SqlBatchRepository(IDbConnectionFactory connections) : IBatc
                 for (var i = 0; i < m.Records.Count; i++)
                     await Run(insert, ct, batch.Id, m.LineNumber, i, m.Key, m.Records[i].Type, JsonSerializer.Serialize(m.Records[i].Fields, Json));
         }
-        await using (var insert = Prepare(db, tx, SqliteSql.InsertIssue, "id", "seq", "severity", "line_number", "member_id", "field", "value", "rule", "action"))
+        await using (var insert = Prepare(db, tx, SqliteSql.InsertIssue, "id", "seq", "severity", "line_number", "member_id", "field", "value", "rule", "action", "owner",
+                   "acknowledged_by", "acknowledged_at_utc", "acknowledgement_note"))
         {
+            var checkedBy = batch.Acknowledgements.ToDictionary(a => a.IssueId);
             for (var i = 0; i < r.Issues.Count; i++)
             {
                 var x = r.Issues[i];
-                await Run(insert, ct, batch.Id, i, x.Severity.ToString(), x.LineNumber, x.Key, x.Field, x.Value, x.Rule, x.Action);
+                checkedBy.TryGetValue(i, out var a);
+                await Run(insert, ct, batch.Id, i, x.Severity.ToString(), x.LineNumber, x.Key, x.Field, x.Value, x.Rule, x.Action, x.Owner.ToString(),
+                    a?.By, a is null ? null : Iso(a.AtUtc), a?.Note);
+            }
+        }
+        await using (var insert = Prepare(db, tx, SqliteSql.InsertCorrection, "id", "seq", "line_number", "member_id", "column", "before_value", "after_value", "description"))
+        {
+            for (var i = 0; i < r.Corrections.Count; i++)
+            {
+                var c = r.Corrections[i];
+                await Run(insert, ct, batch.Id, i, c.LineNumber, c.Key, c.Column, c.Before, c.After, c.Description);
             }
         }
         await using (var insert = Prepare(db, tx, SqliteSql.InsertReconciliation, "id", "measure", "source", "transformed", "rejected"))
@@ -152,9 +168,23 @@ public sealed class SqlBatchRepository(IDbConnectionFactory connections) : IBatc
         await using var db = await OpenAsync(ct);
         return await Query(db, SqliteSql.Issues, ct, r => new ImportIssue
         {
-            Severity = Enum.Parse<Severity>(r.GetString(0)), LineNumber = r.GetInt32(1), Key = r.GetString(2), Field = r.GetString(3),
-            Value = r.GetString(4), Rule = r.GetString(5), Action = r.GetString(6),
+            Id = r.GetInt32(0), Severity = Enum.Parse<Severity>(r.GetString(1)), LineNumber = r.GetInt32(2), Key = r.GetString(3), Field = r.GetString(4),
+            Value = r.GetString(5), Rule = r.GetString(6), Action = r.GetString(7), Owner = Enum.TryParse<IssueOwner>(r.GetString(8), out var o) ? o : IssueOwner.Employer,
         }, ("id", id));
+    }
+
+    public async Task<IReadOnlyList<Acknowledgement>> AcknowledgementsAsync(string id, CancellationToken ct)
+    {
+        await using var db = await OpenAsync(ct);
+        return await Query(db, SqliteSql.Acknowledgements, ct,
+            r => new Acknowledgement(r.GetInt32(0), r.GetString(1), Date(r.GetString(2)), r.IsDBNull(3) ? null : r.GetString(3)), ("id", id));
+    }
+
+    public async Task<IReadOnlyList<Correction>> CorrectionsAsync(string id, CancellationToken ct)
+    {
+        await using var db = await OpenAsync(ct);
+        return await Query(db, SqliteSql.Corrections, ct,
+            r => new Correction(r.GetInt32(0), r.GetString(1), r.GetString(2), r.GetString(3), r.GetString(4), r.GetString(5)), ("id", id));
     }
 
     public async Task<string?> ReportAsync(string id, CancellationToken ct)

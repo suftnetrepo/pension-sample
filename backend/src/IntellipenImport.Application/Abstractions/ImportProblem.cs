@@ -21,4 +21,6 @@ public sealed class ImportOptions
     public int MarkerDays { get; set; } = 7;
     public long MaxFileBytes { get; set; } = 10 * 1024 * 1024;
     public int MaxLines { get; set; } = 50_000;
+    /// <summary>When true (default), a batch can't be committed until a reviewer has checked every warning.</summary>
+    public bool RequireWarningsAcknowledged { get; set; } = true;
 }

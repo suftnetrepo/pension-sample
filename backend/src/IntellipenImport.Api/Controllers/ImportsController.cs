@@ -41,6 +41,22 @@ public sealed class ImportsController(ImportCommands commands, ImportQueries que
     [HttpGet("imports/{id}/exceptions.csv")]
     public async Task<FileContentResult> ExceptionsCsv(string id, CancellationToken ct) => Download(await queries.IssuesCsvAsync(id, ct));
 
+    /// <summary>Automatic format corrections made while reading the file.</summary>
+    [HttpGet("imports/{id}/corrections")]
+    public Task<IReadOnlyList<CorrectionDto>> Corrections(string id, CancellationToken ct) => queries.CorrectionsAsync(id, ct);
+
+    [HttpGet("imports/{id}/corrections.csv")]
+    public async Task<FileContentResult> CorrectionsCsv(string id, CancellationToken ct) => Download(await queries.CorrectionsCsvAsync(id, ct));
+
+    /// <summary>Marks several warnings as checked by the signed-in user. Returns the updated summary.</summary>
+    [HttpPost("imports/{id}/acknowledgements")]
+    public Task<BatchSummaryDto> Acknowledge(string id, AcknowledgeRequest request, CancellationToken ct) =>
+        commands.AcknowledgeAsync(id, request.IssueIds ?? [], request.Note, ct);
+
+    /// <summary>Takes back one check. Returns the updated summary.</summary>
+    [HttpDelete("imports/{id}/acknowledgements/{issueId:int}")]
+    public Task<BatchSummaryDto> Unacknowledge(string id, int issueId, CancellationToken ct) => commands.UnacknowledgeAsync(id, issueId, ct);
+
     /// <summary>Preview of the IntelliPen file (first lines), or the whole file with download=true.</summary>
     [HttpGet("imports/{id}/file")]
     public async Task<IActionResult> OutputFile(string id, [FromQuery] int lines = 50, [FromQuery] bool download = false, CancellationToken ct = default) =>
@@ -67,3 +83,5 @@ public sealed class ImportsController(ImportCommands commands, ImportQueries que
 }
 
 public sealed record CommitRequest(bool Reviewed);
+
+public sealed record AcknowledgeRequest(int[]? IssueIds, string? Note);

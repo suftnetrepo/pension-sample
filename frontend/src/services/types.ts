@@ -31,6 +31,8 @@ export interface Counts {
   errors: number;
   warnings: number;
   linesWithWarnings: number;
+  warningsChecked: number;
+  corrections: number;
 }
 
 export interface ReconciliationLine {
@@ -77,6 +79,7 @@ export interface BatchSummary {
   recordChecks: RecordCheck[];
   trailerOk: boolean;
   balanced: boolean;
+  warningsPending: number;
   canCommit: boolean;
   closedBy: string | null;
   closedAtUtc: string | null;
@@ -104,7 +107,16 @@ export interface Paged<T> {
   total: number;
 }
 
+/** Who checked a warning, and when. */
+export interface Acknowledgement {
+  by: string;
+  atUtc: string;
+  note: string | null;
+}
+
 export interface Issue {
+  /** Stable within a batch; what the check endpoints take. */
+  id: number;
   severity: 'Error' | 'Warning';
   lineNumber: number;
   key: string;
@@ -112,6 +124,19 @@ export interface Issue {
   value: string;
   rule: string;
   action: string;
+  owner: 'Employer' | 'Payroll' | 'Scheme administrator';
+  /** Set on a warning that a reviewer has checked. */
+  checked: Acknowledgement | null;
+}
+
+/** A safe format fix made while reading the file. NI numbers are masked. */
+export interface Correction {
+  lineNumber: number;
+  key: string;
+  column: string;
+  before: string;
+  after: string;
+  description: string;
 }
 
 export interface FilePreview {

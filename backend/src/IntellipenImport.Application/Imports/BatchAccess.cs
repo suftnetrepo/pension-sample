@@ -49,12 +49,14 @@ public sealed class BatchAccess(IHeldBatchStore store, ITargetMappingCatalog map
             record.Id, record.Status, record.Source, record.SourceName, record.SchemaVersion, record.FileName, batch?.FileSha256 ?? string.Empty,
             batch is null ? null : new MappingDto(batch.MappingName, batch.MappingVersion, m.Description),
             record.UploadedBy, record.UploadedAtUtc, record.ExpiresAtUtc,
-            r is null ? null : new CountsDto(r.LinesRead, r.Accepted, r.Rejected, r.ErrorCount, r.WarningCount, r.WarningLines),
+            r is null ? null : new CountsDto(r.LinesRead, r.Accepted, r.Rejected, r.ErrorCount, r.WarningCount, r.WarningLines, batch!.Acknowledgements.Count, r.Corrections.Count),
             r?.Reconciliation.Select(l => new ReconciliationDto(l.Measure, l.IsMoney, l.Source, l.Transformed, l.Rejected, l.Difference)).ToList() ?? [],
             r?.RecordChecks.Select(c => new RecordCheckDto(c.Type, c.Expected, c.Actual, c.Ok)).ToList() ?? [],
             r?.TrailerOk ?? false,
             r?.Balanced ?? false,
-            CanCommit: record.IsOpen && r is { Balanced: true, Accepted: > 0 } && user.IsCommitter,
+            WarningsPending: batch?.WarningsPending ?? 0,
+            CanCommit: record.IsOpen && r is { Balanced: true, Accepted: > 0 } && user.IsCommitter
+                && (!options.RequireWarningsAcknowledged || batch!.WarningsPending == 0),
             record.ClosedBy, record.ClosedAtUtc, record.Commit);
     }
 

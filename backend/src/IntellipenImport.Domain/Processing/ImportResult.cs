@@ -16,6 +16,8 @@ public sealed class ImportResult
     public List<string> SourceHeaders { get; set; } = [];
     public List<MemberResult> Members { get; set; } = [];
     public List<ImportIssue> Issues { get; set; } = [];
+    /// <summary>Values the reader tidied and then accepted. Informational: they never change accept/reject or the IntelliPen output.</summary>
+    public List<Correction> Corrections { get; set; } = [];
     public List<ReconciliationLine> Reconciliation { get; set; } = [];
     public List<RecordCheck> RecordChecks { get; set; } = [];
     public bool TrailerOk { get; set; }
@@ -61,8 +63,16 @@ public sealed class TargetRecord
 
 public sealed record TargetField(string Name, string Value);
 
+/// <summary>Who has to act on an issue.</summary>
+public enum IssueOwner { Employer, Payroll, SchemeAdministrator }
+
+/// <summary>A safe format fix made while reading a line. Before/After are masked for the NI column.</summary>
+public sealed record Correction(int LineNumber, string Key, string Column, string Before, string After, string Description);
+
 public sealed class ImportIssue
 {
+    /// <summary>Stable within a batch: the issue's index in <see cref="ImportResult.Issues"/>.</summary>
+    public int Id { get; set; }
     public Severity Severity { get; set; }
     public int LineNumber { get; set; }
     public string Key { get; set; } = string.Empty;
@@ -71,6 +81,7 @@ public sealed class ImportIssue
     public string Value { get; set; } = string.Empty;
     public string Rule { get; set; } = string.Empty;
     public string Action { get; set; } = string.Empty;
+    public IssueOwner Owner { get; set; }
 }
 
 public sealed class ReconciliationLine

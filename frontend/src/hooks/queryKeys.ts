@@ -14,5 +14,6 @@ export const queryKeys = {
   rows: (scope: BatchScope, id: string, page: number, pageSize: number, search: string, show: RowFilter) =>
     [root(scope), id, 'rows', page, pageSize, search, show] as const,
   exceptions: (scope: BatchScope, id: string) => [root(scope), id, 'exceptions'] as const,
+  corrections: (scope: BatchScope, id: string) => [root(scope), id, 'corrections'] as const,
   filePreview: (scope: BatchScope, id: string, lines: number) => [root(scope), id, 'file', lines] as const,
 };

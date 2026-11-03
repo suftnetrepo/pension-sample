@@ -52,19 +52,51 @@ Open http://localhost:5173, choose **Source** and **Schema version**, upload the
 Try uploading the Legacy file as *Ashwood payroll v1*: the file is refused and the screen says it uses pipes and matches
 *Legacy admin export v1*. After a commit, the batch appears under **Recently committed** (read from SQLite).
 
+## Exceptions: what reviewers do
+
+Open the **Exceptions** tab. Every issue says **who acts** (Employer, Payroll or Scheme administrator) and what to send back.
+
+- **Errors** reject the line. The tool never fixes them: the owner corrects the value at source and the file is uploaded again.
+  Nothing can be edited here.
+- **Warnings** load the line but must be **checked** before the batch can be committed. Tick warnings (or **Select all shown
+  warnings**), add an optional note, and press **Mark as checked**. Each checked warning shows who checked it and when, with
+  **Undo** until the batch is committed. **Warnings not yet checked** filters the list. While any warning is unchecked the commit bar
+  says "n warnings still to check" and links straight to that filter.
+- Checks are saved with the batch at commit. The committed view, the reconciliation report ("Checked by X at Y: note", or "Not checked")
+  and the exceptions CSV all show them. Committed batches stay read-only.
+- Uploaders and committers can check warnings; the committer still has to commit. Switch the rule off with
+  `Import:RequireWarningsAcknowledged` = `false` (default `true`).
+
+### Automatic corrections
+
+While reading a line the tool makes a small set of safe format fixes, and lists every one under **Automatic corrections** (line,
+member, column, before, after, what was done), in the summary count, in the report, and as `corrections.csv`. A fix is listed only if
+the fixed value is then accepted. Fixes never change which lines are accepted or what is written to the IntelliPen file.
+
+| Fix | Example |
+| --- | --- |
+| Leading or trailing spaces removed | `" David Okafor "` → `David Okafor` |
+| NI number: spaces removed, letters upper-cased | `ab 12 34 56 c` → `AB123456C` (shown masked, `AB12****C`) |
+| £ sign and thousands separators removed from a number | `£52,000` → `52000` |
+| A code matched ignoring case | `active` → `Active` |
+| A day or month written with one digit, in the schema's own order | `1/2/1967` → `01/02/1967` (for `dd/MM/yyyy`) |
+
+Nothing else is guessed: day and month are never swapped, two-digit years are not read, blanks are not filled, and an impossible date
+such as `13/25/1990` or `31/2/1990` stays an error.
+
 ## Committed batches (read-only)
 
 **Committed batches** in the top bar lists every committed batch, newest first, searchable by batch ID, file, source or person.
 **View** opens one with the same four tabs as review (summary, transformed data, exceptions, file preview) and three exports:
 the reconciliation report, the IntelliPen file and the exceptions CSV. There is no commit, discard or edit: the API behind it
-(`/api/v1/committed`) has GET endpoints only.
+(`/api/v1/committed`) has GET endpoints only. The committed view also shows the automatic corrections and who checked each warning.
 
 - Everything shown is what was saved at commit: the figures, the report as sent, and the IntelliPen file byte for byte (its
   fingerprint matches the report). Later config changes don't alter a committed batch.
 - The raw source line is not kept after commit, only the IntelliPen records it became; rejected lines appear in the exceptions.
 - Role `Import.Viewer` can view and export committed batches and do nothing else. Uploaders and committers can view them too.
   Try it with the header `X-Dev-Roles: Import.Viewer`.
-- A database created by an earlier build is upgraded at start-up (two columns added). Batches committed before the upgrade show
+- A database created by an earlier build is upgraded at start-up (columns added to `import_batch` and `import_issue`, and the `import_correction` table created). Batches committed before the upgrade show
   their counts but have no stored IntelliPen file.
 
 Committed data: `backend/data/intellipen-import.db` (SQLite, created on first run). Files: `backend/output/intellipen/`
@@ -80,9 +112,11 @@ cd backend
 dotnet test
 ```
 
-48 tests: CSV reading, schema matching (missing / extra / duplicated columns, wrong delimiter), every validation rule, both
+79 tests: CSV reading, schema matching (missing / extra / duplicated columns, wrong delimiter), every validation rule, both
 **golden sample files** (exact expected IntelliPen output for each source), the proof that the same member from two
-different sources gives identical IntelliPen records, config checks, the batch status rules, and the read-only committed view (it shows and exports exactly what was saved).
+different sources gives identical IntelliPen records, config checks, the batch status rules, the read-only committed view (it shows and exports exactly what was saved),
+checking warnings (domain rules, the commit gate, commit refused with a pending warning, checks surviving into the committed view and the report),
+each automatic correction (and the cases that must not be corrected), and the SQLite save/read/upgrade of checks and corrections.
 Front end: `npm run build` type-checks and builds.
 
 ## Back end: clean architecture
@@ -93,12 +127,12 @@ backend/
     Canonical/CanonicalMember.cs        the fixed internal member model + its fields and codes
     Schemas/SourceSchema.cs             an agreed source layout (one per source + version)
     Mapping/TargetMapping.cs            the IntelliPen mapping (reads canonical fields only)
-    Batches/ImportBatch.cs              batch status and the rules for commit, discard, expiry
+    Batches/ImportBatch.cs              batch status and the rules for commit, discard, expiry, checking warnings (Acknowledgement)
     Processing/ImportResult.cs          what processing produces
   src/IntellipenImport.Application/     depends on Domain only
     Abstractions/Ports.cs               interfaces for everything outside (store, repository, delivery, user, audit)
     Processing/                         CSV reader → CanonicalReader → MemberRules → IntellipenWriter → ImportPipeline
-    Imports/ImportCommands.cs           upload, commit, discard
+    Imports/ImportCommands.cs           upload, commit, discard, check and un-check warnings (BatchLocks.cs: one lock per batch, shared with commit)
     Imports/ImportQueries.cs            sources, summary, rows, exceptions, file, report (held batches)
     Imports/CommittedQueries.cs         the read-only committed view: list, summary, rows, exceptions, file, report
     Reporting/ReconciliationReport.cs   the HTML report
@@ -143,11 +177,24 @@ Isio's own theme, replace those values.
 - Download errors show beside their button.
 - An error boundary catches unexpected rendering errors.
 
+## API additions
+
+| Endpoint | Purpose |
+| --- | --- |
+| `POST /api/v1/imports/{id}/acknowledgements` | body `{ "issueIds": [0, 3], "note": "optional" }`: mark warnings as checked by the signed-in user (all or nothing; errors are refused). Returns the batch summary. Policy: Upload |
+| `DELETE /api/v1/imports/{id}/acknowledgements/{issueId}` | take back one check before commit. Returns the batch summary. Policy: Upload |
+| `GET /api/v1/imports/{id}/corrections`, `.../corrections.csv` | the automatic corrections |
+| `GET /api/v1/committed/{id}/corrections`, `.../corrections.csv` | the same, read-only, for a committed batch |
+
+Issues now carry an `id` (their index in the batch's issue list), an `owner`, and `checked` (who and when, or null). The batch summary
+has `warningsPending`, and `canCommit` is false while it is above zero (when the rule is on).
+
 ## Configuration
 
 | Section | Setting | Default |
 | --- | --- | --- |
 | `Import` | `BatchExpiryHours`, `MarkerDays`, `MaxFileBytes`, `MaxLines` | 24, 7, 10 MB, 50,000 |
+| | `RequireWarningsAcknowledged` | `true`: every warning must be checked before commit |
 | `Infrastructure` | `ConfigPath` | `../../config` |
 | | `IntellipenMapping` | the only file in `config/intellipen` |
 | | `Persistence` | `Sqlite` (or `InMemory`) |

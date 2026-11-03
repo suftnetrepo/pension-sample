@@ -1,6 +1,6 @@
 import { ArrowLeft, Download, Lock } from 'lucide-react';
 import { useCommittedBatch } from '@/hooks/queries';
-import { useDownloadExceptions, useDownloadFile, useDownloadReport } from '@/hooks/mutations';
+import { useDownloadCorrections, useDownloadExceptions, useDownloadFile, useDownloadReport } from '@/hooks/mutations';
 import { formatDateTime } from '@/services/format';
 import { ErrorBanner, InlineError, Pill, Spinner } from '@/components/common/Feedback';
 import { BatchTiles } from '@/components/review/BatchTiles';
@@ -18,6 +18,7 @@ export function CommittedBatchPage({ batchId, onBack }: { batchId: string; onBac
   const report = useDownloadReport();
   const file = useDownloadFile();
   const exceptions = useDownloadExceptions();
+  const corrections = useDownloadCorrections();
 
   const back = (
     <Button variant="ghost" className="w-fit" onClick={onBack}>
@@ -77,9 +78,13 @@ export function CommittedBatchPage({ batchId, onBack }: { batchId: string; onBac
                 <Download aria-hidden="true" />
                 {exceptions.busy ? 'Preparing…' : 'Exceptions (CSV)'}
               </Button>
+              <Button variant="secondary" onClick={() => corrections.run('committed', b.id)} disabled={corrections.busy}>
+                <Download aria-hidden="true" />
+                {corrections.busy ? 'Preparing…' : 'Corrections (CSV)'}
+              </Button>
             </div>
           </div>
-          <InlineError error={report.error ?? file.error ?? exceptions.error} />
+          <InlineError error={report.error ?? file.error ?? exceptions.error ?? corrections.error} />
         </CardContent>
       </Card>
     </section>

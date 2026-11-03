@@ -54,10 +54,18 @@ public sealed class ImportQueries(ISourceSchemaCatalog schemas, BatchAccess acce
     public async Task<IReadOnlyList<IssueDto>> IssuesAsync(string id, CancellationToken ct)
     {
         var (_, batch) = await access.RequireHeldAsync(id, ct);
-        return Exports.Issues(batch.Result.Issues);
+        return Exports.Issues(batch.Result.Issues, batch.Acknowledgements);
     }
 
     public async Task<DownloadDto> IssuesCsvAsync(string id, CancellationToken ct) => Exports.ExceptionsCsv(id, await IssuesAsync(id, ct));
+
+    public async Task<IReadOnlyList<CorrectionDto>> CorrectionsAsync(string id, CancellationToken ct)
+    {
+        var (_, batch) = await access.RequireHeldAsync(id, ct);
+        return Exports.Corrections(batch.Result.Corrections);
+    }
+
+    public async Task<DownloadDto> CorrectionsCsvAsync(string id, CancellationToken ct) => Exports.CorrectionsCsv(id, await CorrectionsAsync(id, ct));
 
     public async Task<FilePreviewDto> FilePreviewAsync(string id, int lines, CancellationToken ct)
     {
@@ -75,7 +83,7 @@ public sealed class ImportQueries(ISourceSchemaCatalog schemas, BatchAccess acce
     public async Task<string> ReportAsync(string id, CancellationToken ct)
     {
         var (record, batch) = await access.RequireHeldAsync(id, ct);
-        return ReconciliationReport.Build(ImportCommands.Header(batch, record.Status.ToString(), null, null, null), batch.Result);
+        return ReconciliationReport.Build(ImportCommands.Header(batch, record.Status.ToString(), null, null, null), batch.Result, batch.Acknowledgements);
     }
 
     public async Task<DownloadDto> ReportDownloadAsync(string id, CancellationToken ct) => Exports.Report(id, await ReportAsync(id, ct));

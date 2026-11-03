@@ -32,10 +32,10 @@ public sealed class CommittedQueries(ICommittedBatchReader reader, ITargetMappin
             s.Id, BatchStatus.Committed, s.Source, s.SourceName, s.SchemaVersion, s.FileName, s.FileSha256,
             new MappingDto(s.MappingName, s.MappingVersion, description),
             s.UploadedBy, s.UploadedAtUtc, ExpiresAtUtc: s.CommittedAtUtc,
-            new CountsDto(f.LinesRead, f.Accepted, f.Rejected, f.Errors, f.Warnings, f.LinesWithWarnings),
+            new CountsDto(f.LinesRead, f.Accepted, f.Rejected, f.Errors, f.Warnings, f.LinesWithWarnings, f.WarningsChecked, f.Corrections),
             f.Reconciliation.Select(l => new ReconciliationDto(l.Measure, l.IsMoney, l.Source, l.Transformed, l.Rejected, l.Difference)).ToList(),
             f.RecordChecks.Select(c => new RecordCheckDto(c.Type, c.Expected, c.Actual, c.Ok)).ToList(),
-            f.TrailerOk, f.Balanced, CanCommit: false, s.CommittedBy, s.CommittedAtUtc,
+            f.TrailerOk, f.Balanced, WarningsPending: 0, CanCommit: false, s.CommittedBy, s.CommittedAtUtc,
             new CommitOutcome
             {
                 MembersSaved = f.Accepted, RecordCounts = f.RecordCounts, RejectedLines = f.Rejected,
@@ -59,8 +59,16 @@ public sealed class CommittedQueries(ICommittedBatchReader reader, ITargetMappin
     public async Task<IReadOnlyList<IssueDto>> IssuesAsync(string id, CancellationToken ct)
     {
         await RequireAsync(id, ct);
-        return Exports.Issues(await reader.IssuesAsync(id, ct));
+        return Exports.Issues(await reader.IssuesAsync(id, ct), await reader.AcknowledgementsAsync(id, ct));
     }
+
+    public async Task<IReadOnlyList<CorrectionDto>> CorrectionsAsync(string id, CancellationToken ct)
+    {
+        await RequireAsync(id, ct);
+        return Exports.Corrections(await reader.CorrectionsAsync(id, ct));
+    }
+
+    public async Task<DownloadDto> CorrectionsCsvAsync(string id, CancellationToken ct) => Exports.CorrectionsCsv(id, await CorrectionsAsync(id, ct));
 
     public async Task<DownloadDto> IssuesCsvAsync(string id, CancellationToken ct) => Exports.ExceptionsCsv(id, await IssuesAsync(id, ct));
 

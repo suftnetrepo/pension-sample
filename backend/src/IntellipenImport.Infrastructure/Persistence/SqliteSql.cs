@@ -53,6 +53,22 @@ internal static class SqliteSql
             value        TEXT    NOT NULL,
             rule         TEXT    NOT NULL,
             action       TEXT    NOT NULL,
+            owner        TEXT    NOT NULL DEFAULT '',
+            acknowledged_by         TEXT NULL,
+            acknowledged_at_utc     TEXT NULL,
+            acknowledgement_note    TEXT NULL,
+            PRIMARY KEY (batch_id, seq)
+        );
+
+        CREATE TABLE IF NOT EXISTS import_correction (
+            batch_id     TEXT    NOT NULL REFERENCES import_batch (id),
+            seq          INTEGER NOT NULL,
+            line_number  INTEGER NOT NULL,
+            member_id    TEXT    NOT NULL,
+            "column"     TEXT    NOT NULL,
+            before_value TEXT    NOT NULL,
+            after_value  TEXT    NOT NULL,
+            description  TEXT    NOT NULL,
             PRIMARY KEY (batch_id, seq)
         );
 
@@ -67,12 +83,16 @@ internal static class SqliteSql
         """;
 
     /// <summary>Columns added after the first release, for a database created by an earlier build (SQLite has no ADD COLUMN IF NOT EXISTS).</summary>
-    public const string BatchColumns = "SELECT name FROM pragma_table_info('import_batch');";
+    public const string TableColumns = "SELECT name FROM pragma_table_info($table);";
 
-    public static readonly (string Column, string Sql)[] AddedColumns =
+    public static readonly (string Table, string Column, string Sql)[] AddedColumns =
     [
-        ("output_file", "ALTER TABLE import_batch ADD COLUMN output_file TEXT NOT NULL DEFAULT '';"),
-        ("summary_json", "ALTER TABLE import_batch ADD COLUMN summary_json TEXT NOT NULL DEFAULT '';"),
+        ("import_batch", "output_file", "ALTER TABLE import_batch ADD COLUMN output_file TEXT NOT NULL DEFAULT '';"),
+        ("import_batch", "summary_json", "ALTER TABLE import_batch ADD COLUMN summary_json TEXT NOT NULL DEFAULT '';"),
+        ("import_issue", "owner", "ALTER TABLE import_issue ADD COLUMN owner TEXT NOT NULL DEFAULT '';"),
+        ("import_issue", "acknowledged_by", "ALTER TABLE import_issue ADD COLUMN acknowledged_by TEXT NULL;"),
+        ("import_issue", "acknowledged_at_utc", "ALTER TABLE import_issue ADD COLUMN acknowledged_at_utc TEXT NULL;"),
+        ("import_issue", "acknowledgement_note", "ALTER TABLE import_issue ADD COLUMN acknowledgement_note TEXT NULL;"),
     ];
 
     /// <summary>Run first in the commit transaction, so a retried commit replaces the earlier save.</summary>
@@ -80,6 +100,7 @@ internal static class SqliteSql
     [
         "DELETE FROM import_reconciliation WHERE batch_id = $id;",
         "DELETE FROM import_issue WHERE batch_id = $id;",
+        "DELETE FROM import_correction WHERE batch_id = $id;",
         "DELETE FROM import_member_record WHERE batch_id = $id;",
         "DELETE FROM import_batch WHERE id = $id;",
     ];
@@ -99,8 +120,15 @@ internal static class SqliteSql
         """;
 
     public const string InsertIssue = """
-        INSERT INTO import_issue (batch_id, seq, severity, line_number, member_id, field, value, rule, action)
-        VALUES ($id, $seq, $severity, $line_number, $member_id, $field, $value, $rule, $action);
+        INSERT INTO import_issue (batch_id, seq, severity, line_number, member_id, field, value, rule, action, owner,
+            acknowledged_by, acknowledged_at_utc, acknowledgement_note)
+        VALUES ($id, $seq, $severity, $line_number, $member_id, $field, $value, $rule, $action, $owner,
+            $acknowledged_by, $acknowledged_at_utc, $acknowledgement_note);
+        """;
+
+    public const string InsertCorrection = """
+        INSERT INTO import_correction (batch_id, seq, line_number, member_id, "column", before_value, after_value, description)
+        VALUES ($id, $seq, $line_number, $member_id, $column, $before_value, $after_value, $description);
         """;
 
     public const string InsertReconciliation = """
@@ -161,8 +189,18 @@ internal static class SqliteSql
         """;
 
     public const string Issues = """
-        SELECT severity, line_number, member_id, field, value, rule, action
+        SELECT seq, severity, line_number, member_id, field, value, rule, action, owner
         FROM import_issue WHERE batch_id = $id ORDER BY seq;
+        """;
+
+    public const string Acknowledgements = """
+        SELECT seq, acknowledged_by, acknowledged_at_utc, acknowledgement_note
+        FROM import_issue WHERE batch_id = $id AND acknowledged_by IS NOT NULL ORDER BY seq;
+        """;
+
+    public const string Corrections = """
+        SELECT line_number, member_id, "column", before_value, after_value, description
+        FROM import_correction WHERE batch_id = $id ORDER BY seq;
         """;
 
     public const string Report = "SELECT report_html FROM import_batch WHERE id = $id;";

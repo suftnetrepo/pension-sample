@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net;
 using System.Text;
 using IntellipenImport.Application.Processing;
+using IntellipenImport.Domain.Batches;
 using IntellipenImport.Domain.Processing;
 
 namespace IntellipenImport.Application.Reporting;
@@ -27,7 +28,7 @@ public static class ReconciliationReport
 {
     private static readonly CultureInfo Uk = CultureInfo.InvariantCulture; // fixed formats below give UK-style dd/MM/yyyy and 1,234.56
 
-    public static string Build(ReportHeader h, ImportResult r)
+    public static string Build(ReportHeader h, ImportResult r, IReadOnlyList<Acknowledgement> acknowledgements)
     {
         static string E(string? s) => WebUtility.HtmlEncode(s ?? string.Empty);
         string When(DateTimeOffset? t) => t is null ? "-" : t.Value.ToUniversalTime().ToString("dd/MM/yyyy HH:mm 'UTC'", Uk);
@@ -62,6 +63,8 @@ public static class ReconciliationReport
         Row("Accepted", r.Accepted.ToString("N0", Uk));
         Row("Rejected (errors)", r.Rejected.ToString("N0", Uk));
         Row("Warnings", r.WarningCount.ToString("N0", Uk));
+        Row("Warnings checked", $"{acknowledgements.Count:N0} of {r.WarningCount:N0}");
+        Row("Automatic corrections", r.Corrections.Count.ToString("N0", Uk));
         foreach (var c in r.RecordChecks) Row($"{c.Type} records", $"{c.Actual:N0} written, {c.Expected:N0} expected {(c.Ok ? "(OK)" : "(MISMATCH)")}");
         Row("Trailer record count", r.TrailerOk ? "Agrees with the file" : "DOES NOT AGREE");
         sb.Append("</tbody></table>");
@@ -75,19 +78,42 @@ public static class ReconciliationReport
         }
         sb.Append("</tbody></table>");
 
+        var checkedBy = acknowledgements.ToDictionary(a => a.IssueId);
+        string Checked(ImportIssue i) => i.Severity == Severity.Error ? "-"
+            : checkedBy.TryGetValue(i.Id, out var a) ? $"Checked by {a.By} at {When(a.AtUtc)}" + (string.IsNullOrEmpty(a.Note) ? string.Empty : ": " + a.Note) : "Not checked";
+        string Who(IssueOwner o) => o == IssueOwner.SchemeAdministrator ? "Scheme administrator" : o.ToString();
+
         void Issues(string title, Severity severity)
         {
             var list = r.Issues.Where(i => i.Severity == severity).OrderBy(i => i.LineNumber).ToList();
             sb.Append("<h2>").Append(E(title)).Append(" (").Append(list.Count).Append(")</h2>");
             if (list.Count == 0) { sb.Append("<p class=\"muted\">None.</p>"); return; }
-            sb.Append("<table><thead><tr><th>Line</th><th>Member</th><th>Field</th><th>Value</th><th>Rule</th><th>What to do</th></tr></thead><tbody>");
+            sb.Append("<table><thead><tr><th>Line</th><th>Member</th><th>Field</th><th>Value</th><th>Rule</th><th>What to do</th><th>Who acts</th>")
+              .Append(severity == Severity.Warning ? "<th>Checked</th>" : string.Empty).Append("</tr></thead><tbody>");
             foreach (var i in list)
+            {
                 sb.Append("<tr><td class=\"n\">").Append(i.LineNumber).Append("</td><td>").Append(E(i.Key)).Append("</td><td>").Append(E(i.Field))
-                  .Append("</td><td>").Append(E(i.Value)).Append("</td><td>").Append(E(i.Rule)).Append("</td><td>").Append(E(i.Action)).Append("</td></tr>");
+                  .Append("</td><td>").Append(E(i.Value)).Append("</td><td>").Append(E(i.Rule)).Append("</td><td>").Append(E(i.Action))
+                  .Append("</td><td>").Append(E(Who(i.Owner))).Append("</td>");
+                if (severity == Severity.Warning) sb.Append("<td>").Append(E(Checked(i))).Append("</td>");
+                sb.Append("</tr>");
+            }
             sb.Append("</tbody></table>");
         }
         Issues("Rejected lines: errors", Severity.Error);
         Issues("Warnings: loaded, check these", Severity.Warning);
+
+        sb.Append("<h2>Automatic corrections (").Append(r.Corrections.Count).Append(")</h2>");
+        if (r.Corrections.Count == 0) sb.Append("<p class=\"muted\">None.</p>");
+        else
+        {
+            sb.Append("<p class=\"muted\">Format fixes made while reading. They do not change which lines are accepted or what is written to the IntelliPen file.</p>")
+              .Append("<table><thead><tr><th>Line</th><th>Member</th><th>Column</th><th>Before</th><th>After</th><th>What was done</th></tr></thead><tbody>");
+            foreach (var c in r.Corrections.OrderBy(c => c.LineNumber))
+                sb.Append("<tr><td class=\"n\">").Append(c.LineNumber).Append("</td><td>").Append(E(c.Key)).Append("</td><td>").Append(E(c.Column))
+                  .Append("</td><td>").Append(E(c.Before)).Append("</td><td>").Append(E(c.After)).Append("</td><td>").Append(E(c.Description)).Append("</td></tr>");
+            sb.Append("</tbody></table>");
+        }
 
         sb.Append("<p class=\"muted\">NI numbers are masked in this report.</p></body></html>");
         return sb.ToString();

@@ -40,6 +40,7 @@ public sealed class CommittedSnapshot
                 LinesRead = r.LinesRead, Accepted = r.Accepted, Rejected = r.Rejected, Errors = r.ErrorCount, Warnings = r.WarningCount,
                 LinesWithWarnings = r.WarningLines, Reconciliation = r.Reconciliation, RecordChecks = r.RecordChecks, TrailerOk = r.TrailerOk,
                 Balanced = r.Balanced, RecordCounts = r.RecordCounts,
+                WarningsChecked = batch.Acknowledgements.Count, Corrections = r.Corrections.Count,
             },
         };
     }
@@ -57,6 +58,8 @@ public sealed class CommittedFigures
     public int Errors { get; set; }
     public int Warnings { get; set; }
     public int LinesWithWarnings { get; set; }
+    public int WarningsChecked { get; set; }
+    public int Corrections { get; set; }
     public List<ReconciliationLine> Reconciliation { get; set; } = [];
     public List<RecordCheck> RecordChecks { get; set; } = [];
     public bool TrailerOk { get; set; }

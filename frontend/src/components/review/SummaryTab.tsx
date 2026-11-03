@@ -88,6 +88,17 @@ export function SummaryTab({ scope, batch }: { scope: BatchScope; batch: BatchSu
             </Fact>
           </>
         )}
+        {batch.counts && (
+          <>
+            <Fact label="Warnings checked">
+              {formatNumber(batch.counts.warningsChecked)} of {formatNumber(batch.counts.warnings)}
+            </Fact>
+            <Fact label="Automatic corrections">
+              {formatNumber(batch.counts.corrections)}
+              {batch.counts.corrections > 0 && ' · listed in the Exceptions tab'}
+            </Fact>
+          </>
+        )}
         <Fact label="Trailer record count" className={batch.trailerOk ? 'text-success' : 'text-destructive'}>
           {batch.trailerOk ? 'Agrees with the file' : 'Does not agree'}
         </Fact>

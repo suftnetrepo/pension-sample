@@ -8,13 +8,13 @@ namespace IntellipenImport.Infrastructure.Persistence;
 /// <summary>For demos and tests (Infrastructure:Persistence = "InMemory"): committed batches are lost when the API stops.</summary>
 public sealed class InMemoryBatchRepository : IBatchRepository, ICommittedBatchReader
 {
-    private sealed record Saved(CommittedSnapshot Snapshot, List<CommittedMember> Members, List<ImportIssue> Issues, string Report, string OutputFile);
+    private sealed record Saved(CommittedSnapshot Snapshot, List<CommittedMember> Members, List<ImportIssue> Issues, List<Acknowledgement> Acknowledgements, List<Correction> Corrections, string Report, string OutputFile);
 
     private readonly ConcurrentDictionary<string, Saved> _batches = new(StringComparer.OrdinalIgnoreCase);
 
     public Task SaveCommittedAsync(CommittedSnapshot snapshot, HeldBatch batch, string reportHtml, string outputFile, CancellationToken ct)
     {
-        _batches[snapshot.Id] = new Saved(snapshot, CommittedSnapshot.Members(batch).ToList(), [.. batch.Result.Issues], reportHtml, outputFile);
+        _batches[snapshot.Id] = new Saved(snapshot, CommittedSnapshot.Members(batch).ToList(), [.. batch.Result.Issues], [.. batch.Acknowledgements], [.. batch.Result.Corrections], reportHtml, outputFile);
         return Task.CompletedTask;
     }
 
@@ -48,6 +48,12 @@ public sealed class InMemoryBatchRepository : IBatchRepository, ICommittedBatchR
 
     public Task<IReadOnlyList<ImportIssue>> IssuesAsync(string id, CancellationToken ct) =>
         Task.FromResult<IReadOnlyList<ImportIssue>>(_batches.GetValueOrDefault(id)?.Issues ?? []);
+
+    public Task<IReadOnlyList<Acknowledgement>> AcknowledgementsAsync(string id, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<Acknowledgement>>(_batches.GetValueOrDefault(id)?.Acknowledgements ?? []);
+
+    public Task<IReadOnlyList<Correction>> CorrectionsAsync(string id, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<Correction>>(_batches.GetValueOrDefault(id)?.Corrections ?? []);
 
     public Task<string?> ReportAsync(string id, CancellationToken ct) => Task.FromResult(_batches.GetValueOrDefault(id)?.Report);
 

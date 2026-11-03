@@ -83,8 +83,12 @@ export async function getJson<T>(path: string, signal?: AbortSignal): Promise<T>
   return (await request(path, { signal })).json() as Promise<T>;
 }
 
-export async function sendJson<T>(path: string, method: 'POST' | 'PUT', body: unknown): Promise<T> {
-  const response = await request(path, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+export async function sendJson<T>(path: string, method: 'POST' | 'PUT' | 'DELETE', body?: unknown): Promise<T> {
+  const response = await request(path, {
+    method,
+    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
   return response.json() as Promise<T>;
 }
 
