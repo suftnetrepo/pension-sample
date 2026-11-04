@@ -1,0 +1,87 @@
+Read-only task: do not change, move or delete any file in this repository. Write your output to a new file
+docs/current-state-summary.md only.
+
+I'm new to this project and the owner is away. Read docs/, the mapping files, the source-feed inventory, the
+migration-procedures list and any review-issue files, then write a plain-English summary:
+
+1. Purpose: what is being migrated, from which system to which, as far as the files show. Say what is evidence and what is inference.
+2. The universal pension member schema: version, status (candidate or locked), top-level structure (main sections and
+   what each holds), and how many fields.
+3. The universal-to-IntelliPen mapping: number of target tables and insert contracts; for each target table, how many
+   columns are mapped from a source, derived, defaulted, or not mapped yet. List the gaps.
+4. The source feed: number of source tables, the manifest format, what each inventory column means, and a table of
+   which source tables have problems (missing/extra columns, no table definition, not verified and why).
+5. The existing SQL procedures: run order, what each produces, and which source views/tables each depends on.
+6. Open review issues: group them by theme and count them.
+7. Questions for the owner: specific things the files don't answer, most important first.
+8. A suggestion for proving the mapping: how one target table (e.g. tb_Person) could be produced both from the mapping file
+   and from its stored procedure, using synthetic data only, and compared row by row.
+
+Keep it factual, cite file names for every claim, and don't include any member data values.
+
+
+Yes. While you can't confirm the direction, ask Claude for **design proposals, not code**. Each answer becomes something you can show the owner. These are the questions I'd ask, as ready-to-paste prompts.
+
+Run them in Claude Code on the work laptop, with both folders open: Isio's `microschemes` repository and our `IntellipenImport` project. Copy ours into the workspace if it isn't there. Each prompt writes one document into our project's `docs/design/` folder and doesn't touch Isio's repository.
+
+**1. The flow at real scale**
+```text
+Read-only on microschemes. Using docs/current-state-summary.md and the IntellipenImport README, propose how the import
+flow changes when the input is a source feed (many CSVs + a manifest) and the output is IntelliPen database tables (per the
+universal-to-IntelliPen mapping), instead of one CSV to one file. Cover: upload (zip vs folder vs file share), manifest
+and per-table checks (row counts, widths, missing/extra columns, control sums, as in the source-feed inventory), assembling
+the universal member record across tables, producing rows per IntelliPen table in dependency order, reconciliation per
+table and overall, review, and commit/load. Show it as a numbered flow plus a mermaid diagram, and mark which steps exist
+in IntellipenImport today and which are new. Write docs/design/01-flow-at-scale.md.
+```
+
+**2. Screen changes**
+```text
+Propose the UI changes for the flow in docs/design/01-flow-at-scale.md, reusing the existing IntellipenImport screens,
+shadcn/ui components and services -> hooks -> components pattern. At least: feed upload with manifest check results; a
+per-source-table check grid; review by IntelliPen table (79 tables, counts, rows, masked values); a member view showing one
+member across all target tables; reconciliation per table; progress for a long run. For each screen: purpose, what's
+shown, actions, and what changes from today. Then build a clickable static mock (one HTML file, sample data only,
+no real names) at docs/design/02-ui-mock.html. Write docs/design/02-ui-changes.md.
+```
+
+**3. Making our engine use their mapping**
+```text
+Compare IntellipenImport's model (SourceSchema, CanonicalMember, TargetMapping, ImportPipeline) with microschemes'
+universal schema and 03-universal-to-intellipen.mapping.json. Produce a gap analysis: what our engine can already express,
+what it can't (nested collections like memberships[*], conditions, derived fields, multiple target tables, foreign keys
+between tables), and the smallest set of changes to run their mapping file as-is rather than re-typing it. Include
+performance: estimated rows per run and how to load into SQL Server (bulk copy, batching, transactions). No code changes;
+write docs/design/03-engine-gap-analysis.md.
+```
+
+**4. Proving the transform is right**
+```text
+Design a parity test: generate synthetic source data from the source-feed schema (no real data), run it through
+(a) the existing DataConversion_IntelliPen_* stored procedures and (b) a mapping-driven transform, and compare results
+table by table and row by row, with a readable difference report. Cover: how to stand up a local SQL Server with the
+schema, the data generator (edge cases per rule), the comparison keys per target table, and how this becomes a regression
+test. Start with tb_Person only, then the order to extend. Write docs/design/04-parity-testing.md.
+```
+
+**5. Loading into IntelliPen safely**
+```text
+From the procedures list and mapping, describe how data reaches IntelliPen today (delete-and-repopulate, run order by
+name) and its risks. Propose a safer load: load order from table dependencies rather than names, one transaction or
+resumable stages, re-running without duplicates, a record of each run, and rollback. Note what must be confirmed with
+Procentia/IntelliPen (direct table load vs staging + their loader). Write docs/design/05-loading-into-intellipen.md.
+```
+
+**6. Collecting the questions**
+```text
+Read every docs/design/*.md and docs/current-state-summary.md, and write docs/design/00-briefing.md: one page for the
+project owner, with what exists, the proposed approach in five bullets, decisions needed (most important first, each with a
+recommended answer), risks, and a two-week plan. Plain English, no code.
+```
+
+**What to expect:** prompts 1 to 5 each take one session, and number 6 pulls them together into a one-page briefing for when the owner is back.
+
+- Read each document before running the next. If prompt 3 shows their mapping can't run in our engine without big changes, that's a major finding, and it changes what prompts 4 and 5 should assume.
+- Prompt 2 is the one to check most closely yourself, because the screen mock is what you'll actually show the owner.
+
+You can paste the briefing back here, without client names or tables. I'll do a second review of the approach, and update our spec once the owner confirms the direction.
